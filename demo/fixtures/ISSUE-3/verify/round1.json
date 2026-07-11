@@ -1,0 +1,9 @@
+{
+  "verdict": "mismatch",
+  "issues": [
+    "Header bar is pink (#e91e63); the mockup uses SplitSathi green #0f9d58.",
+    "Only two stat cards rendered — the mockup shows three: Total Spend, Top Spender AND Pending Settlements.",
+    "Stat cards are missing the green accent strip along their top edge.",
+    "Settlement rows have no green UPI Pay action; the mockup shows one per row."
+  ]
+}

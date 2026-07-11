@@ -1,0 +1,1 @@
+Conservation now holds, so I attacked the trust boundary: negative/zero amounts and members outside the group corrupt balances silently today (KeyError or wrong state instead of a clean ValueError).

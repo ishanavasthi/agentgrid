@@ -1,0 +1,4 @@
+{
+  "reject_rounds": [],
+  "approval": "Clean refactor: empty-group guard added, non-empty output preserved exactly (verified against the existing report test), helpers are single-purpose, and both paths have regression tests. Approved."
+}

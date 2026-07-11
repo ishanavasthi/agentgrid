@@ -1,0 +1,22 @@
+# ============================================================
+# AgentGrid dependency tiers
+# ============================================================
+#
+# TIER 0 — offline smoke tests, mock pipeline, live dashboard
+#   NOTHING to install. Python 3.10+ stdlib and git only.
+#   ->  python3 -m agentgrid smoke
+#
+# TIER 1 — real Gemini agents (plug API key, then install)
+#   ->  pip install "google-genai>=2.0.0"
+google-genai>=2.0.0
+#
+# TIER 2 — real screenshots for the visual-verifier mode (optional)
+#   ->  pip install playwright && playwright install chromium
+# playwright>=1.45
+#
+# TIER 3 — real GitHub PRs (optional, not pip):
+#   ->  brew install gh && gh auth login
+#
+# Without Tier 2/3 the pipeline still runs: the visual verifier
+# falls back to HTML-source inspection and the publisher writes a
+# local PR preview + pushes to the local bare origin.

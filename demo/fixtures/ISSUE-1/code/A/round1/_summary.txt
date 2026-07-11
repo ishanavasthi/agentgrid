@@ -1,0 +1,1 @@
+Replaced truncation with rounding in to_paise so 19.99 converts to 1999, and added regression tests for the reported values.

@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AgentGrid — mission control</title>
+<style>
+  :root {
+    --bg: #0b0f14; --panel: #11161d; --panel2: #161d26; --line: #1f2933;
+    --text: #dbe4ee; --dim: #7b8a9a; --accent: #22d3ee; --green: #34d399;
+    --red: #f87171; --yellow: #fbbf24; --magenta: #e879f9; --blue: #60a5fa;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font: 14px/1.45 ui-monospace, "SF Mono", Menlo, monospace; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+  header { display: flex; align-items: center; gap: 14px; padding: 10px 18px; border-bottom: 1px solid var(--line); background: var(--panel); flex-wrap: wrap; }
+  header h1 { font-size: 17px; letter-spacing: .5px; }
+  header h1 span { color: var(--accent); }
+  .pill { padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line); font-size: 12px; color: var(--dim); }
+  .pill.live { color: var(--green); border-color: var(--green); }
+  .pill.err  { color: var(--red); border-color: var(--red); }
+  #backend { color: var(--yellow); }
+  header .spacer { flex: 1; }
+  select, button { background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; font: inherit; }
+  button#runbtn { background: var(--accent); color: #06262b; font-weight: 700; cursor: pointer; border: none; }
+  button#runbtn:disabled { opacity: .45; cursor: not-allowed; }
+
+  #phases { display: flex; gap: 8px; padding: 8px 18px; border-bottom: 1px solid var(--line); background: var(--panel); overflow-x: auto; min-height: 40px; }
+  .phase { padding: 3px 12px; border-radius: 6px; background: var(--panel2); color: var(--dim); font-size: 12px; white-space: nowrap; border: 1px solid var(--line); }
+  .phase.now { color: var(--accent); border-color: var(--accent); }
+
+  main { flex: 1; display: grid; grid-template-columns: 240px 1fr 320px; min-height: 0; }
+  section { border-right: 1px solid var(--line); overflow-y: auto; padding: 12px; }
+  section:last-child { border-right: none; }
+  h2 { font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--dim); margin-bottom: 10px; }
+
+  .agent { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; margin-bottom: 8px; background: var(--panel); transition: border-color .2s, box-shadow .2s; }
+  .agent .face { font-size: 20px; }
+  .agent .name { font-weight: 700; font-size: 13px; }
+  .agent .st { font-size: 11px; color: var(--dim); }
+  .agent.active { border-color: var(--accent); box-shadow: 0 0 12px rgba(34,211,238,.25); }
+  .agent.active .st { color: var(--accent); }
+  .agent.flash { border-color: var(--green); }
+
+  #feed { display: flex; flex-direction: column; gap: 6px; }
+  .ev { padding: 6px 10px; border-radius: 6px; background: var(--panel); border-left: 3px solid var(--line); word-break: break-word; }
+  .ev .who { font-weight: 700; margin-right: 6px; }
+  .ev.msg      { border-left-color: var(--blue); }
+  .ev.tool     { border-left-color: var(--line); color: var(--dim); font-size: 12px; }
+  .ev.handoff  { border-left-color: var(--magenta); color: var(--magenta); }
+  .ev.good     { border-left-color: var(--green); color: var(--green); }
+  .ev.bad      { border-left-color: var(--red); color: var(--red); }
+  .ev.warn     { border-left-color: var(--yellow); color: var(--yellow); }
+  .ev.boom     { border-left-color: var(--red); background: #2a1215; color: var(--red); font-weight: 700; }
+  .ev.pr       { border-left-color: var(--green); background: #0e2a1f; }
+  .ev.sys      { border-left-color: var(--accent); color: var(--accent); }
+  .ev small { color: var(--dim); display: block; font-size: 11px; }
+
+  .task { padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; margin-bottom: 6px; background: var(--panel); font-size: 12px; }
+  .task .owner { color: var(--dim); font-size: 11px; }
+  .chip { float: right; font-size: 10px; padding: 1px 8px; border-radius: 999px; border: 1px solid; }
+  .chip.pending     { color: var(--dim); border-color: var(--dim); }
+  .chip.in_progress { color: var(--accent); border-color: var(--accent); }
+  .chip.done        { color: var(--green); border-color: var(--green); }
+  .chip.failed, .chip.rejected { color: var(--red); border-color: var(--red); }
+  #stats { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 12px; }
+  .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px; text-align: center; }
+  .stat b { display: block; font-size: 18px; color: var(--accent); }
+  .stat span { font-size: 10px; color: var(--dim); text-transform: uppercase; letter-spacing: 1px; }
+  footer { padding: 6px 18px; border-top: 1px solid var(--line); color: var(--dim); font-size: 11px; background: var(--panel); }
+</style>
+</head>
+<body>
+<header>
+  <h1>⚡ Agent<span>Grid</span></h1>
+  <span class="pill" id="status">idle</span>
+  <span class="pill" id="backend">backend: —</span>
+  <span class="pill" id="runid"></span>
+  <div class="spacer"></div>
+  <select id="issue"></select>
+  <select id="mode">
+    <option value="auto">mode: auto</option>
+    <option value="standard">standard</option>
+    <option value="adversarial">adversarial</option>
+    <option value="visual">visual</option>
+    <option value="voice">voice</option>
+  </select>
+  <button id="runbtn">▶ RUN</button>
+</header>
+
+<div id="phases"></div>
+
+<main>
+  <section>
+    <h2>Agents</h2>
+    <div id="agents"></div>
+  </section>
+  <section>
+    <h2>Live collaboration feed</h2>
+    <div id="feed"></div>
+  </section>
+  <section>
+    <h2>Task ledger</h2>
+    <div id="stats">
+      <div class="stat"><b id="s-handoffs">0</b><span>handoffs</span></div>
+      <div class="stat"><b id="s-tasks">0</b><span>tasks</span></div>
+      <div class="stat"><b id="s-rejects">0</b><span>rejections</span></div>
+      <div class="stat"><b id="s-conflicts">0</b><span>conflicts</span></div>
+    </div>
+    <div id="tasks"></div>
+  </section>
+</main>
+<footer>AgentGrid — autonomous multi-agent coding pipeline · Gemini Managed Agents (Antigravity) + gemini-3.5-flash function calling · structured handoff ledger · zero-dependency dashboard</footer>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const ROSTER = [
+  ["Planner", "🧭"], ["Coder", "🛠️"], ["Reviewer", "🔍"], ["Integrator", "🧬"],
+  ["Tester", "🧪"], ["Breaker", "💣"], ["Verifier", "👁️"], ["Intake", "🎙️"],
+  ["Publisher", "📮"],
+];
+const activeCount = {};
+const agentEls = {};
+
+function buildAgents() {
+  const box = $("agents");
+  box.textContent = "";
+  for (const [name, face] of ROSTER) {
+    const el = document.createElement("div");
+    el.className = "agent";
+    const f = document.createElement("div"); f.className = "face"; f.textContent = face;
+    const col = document.createElement("div");
+    const n = document.createElement("div"); n.className = "name"; n.textContent = name;
+    const st = document.createElement("div"); st.className = "st"; st.textContent = "idle";
+    col.append(n, st);
+    el.append(f, col);
+    box.appendChild(el);
+    agentEls[name] = el;
+    activeCount[name] = 0;
+  }
+}
+
+function setAgent(name, state) {
+  const el = agentEls[name];
+  if (!el) return;
+  if (state === "active") activeCount[name]++;
+  else activeCount[name] = Math.max(0, activeCount[name] - 1);
+  const n = activeCount[name];
+  el.classList.toggle("active", n > 0);
+  el.querySelector(".st").textContent = n > 1 ? `working ×${n}` : (n === 1 ? "working" : "idle");
+}
+
+function flashAgent(name) {
+  const el = agentEls[name];
+  if (!el) return;
+  el.classList.add("flash");
+  setTimeout(() => el.classList.remove("flash"), 900);
+}
+
+let stats = { handoffs: 0, tasks: 0, rejects: 0, conflicts: 0 };
+const tasks = new Map();
+
+function resetUI() {
+  $("feed").textContent = "";
+  $("tasks").textContent = "";
+  $("phases").textContent = "";
+  tasks.clear();
+  stats = { handoffs: 0, tasks: 0, rejects: 0, conflicts: 0 };
+  drawStats();
+  buildAgents();
+}
+
+function drawStats() {
+  $("s-handoffs").textContent = stats.handoffs;
+  $("s-tasks").textContent = stats.tasks;
+  $("s-rejects").textContent = stats.rejects;
+  $("s-conflicts").textContent = stats.conflicts;
+}
+
+function feed(cls, who, text, sub) {
+  const el = document.createElement("div");
+  el.className = "ev " + cls;
+  if (who) { const w = document.createElement("span"); w.className = "who"; w.textContent = who; el.appendChild(w); }
+  el.appendChild(document.createTextNode(text));
+  if (sub) { const s = document.createElement("small"); s.textContent = sub; el.appendChild(s); }
+  const box = $("feed");
+  box.appendChild(el);
+  while (box.children.length > 400) box.removeChild(box.firstChild);
+  el.scrollIntoView({ block: "end" });
+}
+
+function upsertTask(t) {
+  tasks.set(t.id, t);
+  let el = document.getElementById("task-" + t.id);
+  if (!el) {
+    el = document.createElement("div");
+    el.className = "task";
+    el.id = "task-" + t.id;
+    $("tasks").prepend(el);
+  }
+  el.textContent = "";
+  const chip = document.createElement("span");
+  chip.className = "chip " + t.status;
+  chip.textContent = t.status.replace("_", " ");
+  const title = document.createElement("div"); title.textContent = t.title;
+  const owner = document.createElement("div"); owner.className = "owner";
+  owner.textContent = (t.owner || "—") + " · " + t.kind;
+  el.append(chip, title, owner);
+  stats.tasks = tasks.size;
+  drawStats();
+}
+
+function addPhase(name) {
+  document.querySelectorAll(".phase.now").forEach(p => p.classList.remove("now"));
+  const el = document.createElement("div");
+  el.className = "phase now";
+  el.textContent = name;
+  $("phases").appendChild(el);
+}
+
+function shorten(s, n = 160) { s = (s || "").trim().split("\n")[0]; return s.length > n ? s.slice(0, n) + "…" : s; }
+
+function handle(e) {
+  switch (e.type) {
+    case "run_started":
+      resetUI();
+      $("status").textContent = "running " + e.issue + " · " + e.mode;
+      $("status").className = "pill live";
+      $("backend").textContent = "backend: " + e.backend;
+      $("runid").textContent = e.run_id;
+      feed("sys", "", "run started — " + (e.backend_note || e.backend));
+      break;
+    case "phase": addPhase(e.name); feed("sys", "", "phase: " + e.name); break;
+    case "agent_state": setAgent(e.agent, e.state); break;
+    case "handoff":
+      stats.handoffs++; drawStats();
+      feed("handoff", "", `⇄ ${e.frm} → ${e.to}`, e.task_title);
+      break;
+    case "agent_message": feed("msg", e.agent, shorten(e.content, 220)); break;
+    case "tool_call":
+      feed("tool", e.agent, `⚙ ${e.tool}(${e.args && e.args.path ? e.args.path : ""})`);
+      break;
+    case "tool_result": break; // keep the feed readable; results show via tests/reviews
+    case "review_verdict":
+      if (e.verdict === "approve") feed("good", "Reviewer", `✔ approved [${e.sub}] round ${e.round}`);
+      else { stats.rejects++; drawStats(); feed("bad", "Reviewer", `✘ changes requested [${e.sub}] round ${e.round}`, shorten(e.critique, 200)); }
+      flashAgent("Reviewer");
+      break;
+    case "merge_conflict":
+      stats.conflicts += (e.files || []).length; drawStats();
+      feed("boom", "", `💥 MERGE CONFLICT — ${(e.files || []).join(", ")} (${e.branch})`);
+      break;
+    case "test_result":
+      feed(e.passed ? "good" : "bad", "Tester", `🧪 ${e.summary} [${e.context || ""}]`);
+      flashAgent("Tester");
+      break;
+    case "breaker_result":
+      feed("warn", "Breaker", `💣 round ${e.round}: ${e.action}`, shorten(e.rationale, 180));
+      break;
+    case "verify_verdict":
+      feed(e.verdict === "match" ? "good" : "warn", "Verifier",
+        `👁 round ${e.round}: ${e.verdict}`, (e.issues || []).join(" · "));
+      break;
+    case "intake_result":
+      feed("good", "Intake", `🎙 "${e.title}" [${e.detected_language || "?"}]`);
+      break;
+    case "pr_created":
+      feed("pr", "Publisher", `📮 PR (${e.mode}): ${e.title || ""}`, e.url || e.preview_path || "");
+      break;
+    case "task_created": case "task_updated": upsertTask(e.task); break;
+    case "error": feed("bad", "", "✖ " + e.message); break;
+    case "run_finished":
+      $("status").textContent = e.ok ? "finished ✔" : "failed ✖";
+      $("status").className = "pill " + (e.ok ? "live" : "err");
+      feed(e.ok ? "good" : "bad", "", e.ok ? "■ run complete — all agents done" : "■ run failed");
+      $("runbtn").disabled = false;
+      break;
+  }
+}
+
+// ------------------------------------------------------------ wiring
+buildAgents();
+const es = new EventSource("/events");
+es.onmessage = ev => { try { handle(JSON.parse(ev.data)); } catch (_) {} };
+es.onerror = () => { $("status").textContent = "reconnecting…"; };
+
+fetch("/api/issues").then(r => r.json()).then(list => {
+  const sel = $("issue");
+  for (const it of list) {
+    const o = document.createElement("option");
+    o.value = it.id;
+    o.textContent = `${it.id} · ${it.mode}`;
+    sel.appendChild(o);
+  }
+});
+fetch("/api/state").then(r => r.json()).then(s => {
+  $("backend").textContent = "backend: " + (s.has_key ? s.backend_pref : "mock (no key)");
+  if (s.running) { $("status").textContent = "running"; $("status").className = "pill live"; $("runbtn").disabled = true; }
+});
+
+$("runbtn").addEventListener("click", () => {
+  $("runbtn").disabled = true;
+  fetch("/api/run", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ issue: $("issue").value, mode: $("mode").value }),
+  }).then(r => r.json()).then(res => {
+    if (res.error) { feed("bad", "", res.error); $("runbtn").disabled = false; }
+  }).catch(() => { $("runbtn").disabled = false; });
+});
+</script>
+</body>
+</html>

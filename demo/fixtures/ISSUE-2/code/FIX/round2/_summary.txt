@@ -1,0 +1,1 @@
+Hardened the trust boundary: add_expense now rejects non-positive or non-integer amounts, unknown payers, unknown participants and empty participant lists with clear ValueErrors before touching any balance.

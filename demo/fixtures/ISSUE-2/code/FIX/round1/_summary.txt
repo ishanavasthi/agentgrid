@@ -1,0 +1,1 @@
+Fixed the paise leak: equal_shares now distributes the division remainder deterministically to the first members, so shares always sum to the total and group balances net to zero.

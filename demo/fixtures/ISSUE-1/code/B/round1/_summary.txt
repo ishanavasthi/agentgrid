@@ -1,0 +1,1 @@
+Added format_inr with correct Indian digit grouping (lakh/crore commas, negatives) and settlement_summary producing UPI-ready transfer lines with an all-settled fallback, plus tests.

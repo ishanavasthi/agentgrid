@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>SplitSathi — Group Stats</title>
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  body { font-family: -apple-system, "Segoe UI", sans-serif; background: #f3f6f4; color: #22302a; }
+  header { background: #0f9d58; color: #fff; padding: 18px 24px; font-size: 20px; font-weight: 700; }
+  main { padding: 24px; max-width: 680px; }
+  .cards { display: flex; gap: 20px; margin-bottom: 24px; }
+  .card { background: #fff; border: 1px solid #dae0dc; border-radius: 8px; flex: 1; overflow: hidden; }
+  .card .accent { height: 8px; background: #0f9d58; }
+  .card .inner { padding: 16px; }
+  .card .label { color: #7a8880; font-size: 12px; text-transform: uppercase; letter-spacing: 1px; }
+  .card .value { font-size: 26px; font-weight: 800; margin-top: 10px; color: #3c4842; }
+  .settlements { background: #fff; border: 1px solid #dae0dc; border-radius: 8px; padding: 8px 16px; }
+  .row { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #eef2ef; }
+  .row:last-child { border-bottom: none; }
+  .upi { background: #0f9d58; color: #fff; border: none; border-radius: 6px; padding: 6px 14px; font-weight: 700; cursor: pointer; }
+</style>
+</head>
+<body>
+  <header>SplitSathi — Group Stats</header>
+  <main>
+    <div class="cards">
+      <div class="card">
+        <div class="accent"></div>
+        <div class="inner">
+          <div class="label">Total Spend</div>
+          <div class="value">₹12,340.00</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="accent"></div>
+        <div class="inner">
+          <div class="label">Top Spender</div>
+          <div class="value">Asha</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="accent"></div>
+        <div class="inner">
+          <div class="label">Pending Settlements</div>
+          <div class="value">3</div>
+        </div>
+      </div>
+    </div>
+    <div class="settlements">
+      <div class="row"><span>Vikram → Asha: ₹1,540.00</span><button class="upi">UPI Pay</button></div>
+      <div class="row"><span>Priya → Asha: ₹880.00</span><button class="upi">UPI Pay</button></div>
+      <div class="row"><span>Rahul → Priya: ₹210.00</span><button class="upi">UPI Pay</button></div>
+    </div>
+  </main>
+</body>
+</html>

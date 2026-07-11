@@ -1,0 +1,11 @@
+{
+  "subtasks": [
+    {
+      "id": "MOD",
+      "title": "Modernize legacy_report and fix the empty-group crash",
+      "files_hint": ["splitsathi/legacy_report.py"],
+      "acceptance": "make_report returns a friendly 'No expenses recorded.' report for empty groups instead of raising ZeroDivisionError; module refactored to clean f-string functions with docstrings; byte-identical output for non-empty ledgers; regression tests cover both paths.",
+      "overlap": false
+    }
+  ]
+}

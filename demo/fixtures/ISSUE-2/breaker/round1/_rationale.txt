@@ -1,0 +1,1 @@
+equal_shares(10000, 3) returns [3333, 3333, 3333] — one paisa evaporates. Money conservation is the product's core invariant; these tests encode it and currently fail.

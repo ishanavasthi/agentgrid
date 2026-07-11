@@ -1,0 +1,5 @@
+{
+  "reject_rounds": [1],
+  "critique": "changes_requested. (1) int(round(rupees * 100)) still performs float arithmetic on currency — this module's contract is EXACT money math; convert via decimal.Decimal(str(amount)) and quantize with ROUND_HALF_UP. (2) UPI CSV exports feed amounts as strings — to_paise must accept str input. (3) Sub-paisa precision like '1.005' must raise ValueError, not silently round: silent rounding is how ledgers drift. (4) Extend the regression tests to cover string inputs, a large amount, and both rejection paths.",
+  "approval": "Decimal-exact conversion, string inputs accepted, sub-paisa rejected loudly, and the test matrix covers every path I asked for. Approved."
+}

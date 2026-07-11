@@ -1,0 +1,1 @@
+Addressed all four verifier findings: header switched to SplitSathi green #0f9d58, added the third stat card (Pending Settlements), green accent strips on every card, and a green UPI Pay button on each settlement row.

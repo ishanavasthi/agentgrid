@@ -1,0 +1,1 @@
+Modernized legacy_report.py: clean helper functions with f-strings and docstrings, empty groups now return a friendly report instead of crashing with ZeroDivisionError, output preserved exactly for non-empty ledgers, regression tests for both paths.

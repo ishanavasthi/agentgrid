@@ -1,0 +1,7 @@
+{
+  "title": "Modernize the legacy monthly report module",
+  "body": "Voice report (translated from Hinglish): 'Yaar, the monthly report module is bahut purana code — 2019 ka. When a group has no expenses it crashes with ZeroDivisionError, report hi nahi banta. Please modernize splitsathi/legacy_report.py: clean functions, f-strings, handle the empty-group case gracefully, and add tests. Existing report output should stay exactly the same for non-empty groups.'",
+  "files_hint": ["splitsathi/legacy_report.py"],
+  "detected_language": "Hinglish (hi-IN + en-IN)",
+  "confidence": 0.93
+}

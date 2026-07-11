@@ -1,0 +1,18 @@
+{
+  "subtasks": [
+    {
+      "id": "A",
+      "title": "Fix paisa-precision in money conversion",
+      "files_hint": ["splitsathi/money.py"],
+      "acceptance": "to_paise is exact for int/float/str amounts; sub-paisa precision raises ValueError; no float arithmetic on currency; regression tests for 19.99 and string inputs.",
+      "overlap": true
+    },
+    {
+      "id": "B",
+      "title": "Add INR formatting and UPI settlement summary",
+      "files_hint": ["splitsathi/money.py"],
+      "acceptance": "format_inr renders Indian digit grouping (₹12,34,567.89) incl. negatives; settlement_summary(transfers) renders 'debtor → creditor: ₹x (UPI)' lines and handles the empty case; tests added.",
+      "overlap": true
+    }
+  ]
+}

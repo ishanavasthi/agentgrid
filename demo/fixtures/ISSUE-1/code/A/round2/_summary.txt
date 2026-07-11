@@ -1,0 +1,1 @@
+Rebuilt to_paise on decimal.Decimal per review: exact conversion for int/float/str inputs, ROUND_HALF_UP quantization, ValueError on sub-paisa precision and garbage, plus tests for string inputs, large amounts and both rejection paths.

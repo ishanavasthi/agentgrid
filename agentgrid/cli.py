@@ -164,13 +164,15 @@ def cmd_doctor(args) -> int:
             client = g2.Client(api_key=s.api_key)
             ids = []
             for m in client.models.list():
-                name = getattr(m, "name", "")
-                if "gemini-3" in name:
-                    ids.append(name.split("/")[-1])
-                if len(ids) >= 6:
+                name = getattr(m, "name", "").split("/")[-1]
+                if name.startswith("gemini") and "embedding" not in name:
+                    ids.append(name)
+                if len(ids) >= 12:
                     break
-            rows.append((f"API reachable — gemini-3* models: {', '.join(ids) or 'none listed'}",
-                         True, f"configured model: {s.model}"))
+            rows.append(("API reachable — models: "
+                         + (", ".join(ids) or "none listed"),
+                         True, f"configured model: {s.model} "
+                               "(override per-run: AGENTGRID_MODEL=...)"))
             rows.append(("managed agents surface (client.agents)",
                          hasattr(client, "agents") and hasattr(client, "interactions"),
                          "hybrid falls back to pure function-calling if absent"))

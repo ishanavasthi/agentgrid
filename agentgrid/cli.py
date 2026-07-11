@@ -55,7 +55,8 @@ def _print_event(e: dict) -> None:
                     f"{e.get('rationale', '')[:90]}", "yellow"))
     elif t == "verify_verdict":
         c = "green" if e["verdict"] == "match" else "yellow"
-        print(color(f"  👁 visual round {e['round']}: {e['verdict']} "
+        method = " [computer_use]" if e.get("method") == "computer_use" else ""
+        print(color(f"  👁 visual round {e['round']}{method}: {e['verdict']} "
                     f"{('— ' + '; '.join(e.get('issues', []))[:120]) if e.get('issues') else ''}", c))
     elif t == "intake_result":
         print(color(f"  🎙 intake: “{e['title']}” "

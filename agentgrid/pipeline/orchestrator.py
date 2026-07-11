@@ -186,6 +186,40 @@ class Orchestrator:
         lines.append(f"handoffs recorded: {len(snap['handoffs'])}")
         return "\n".join(lines)
 
+    def _interactive_visual_verify(self, ctx, repo: Path, page: str,
+                                   mockup: Path) -> dict | None:
+        """Try the Computer Use interactive Verifier. Returns a result
+        dict on success, or None if this path isn't usable right now
+        (mock backend, no key, missing playwright/SDK, model/API error,
+        safety stop) — callers must fall back to the static-screenshot
+        Verifier in that case. Never raises."""
+        if self.backend.name == "mock" or not self.settings.has_key:
+            return None
+        try:
+            from ..llm.computer_use import run_interactive_verify
+            task_prompt = (
+                f"ISSUE:\n{truncate(ctx.issue_text, 1200)}\n\n"
+                "The browser you are controlling is already open on the "
+                "live implementation of this page. Interact with it "
+                "(click, scroll) as needed to check its content and "
+                "behavior match the mockup and the issue's acceptance "
+                "criteria, then report your verdict.")
+            result = run_interactive_verify(
+                self.settings, repo / page, task_prompt,
+                reference_image=mockup if mockup.exists() else None)
+            self.bus.publish(
+                "agent_message", agent="Verifier",
+                content=f"[computer_use] {result['steps']} action(s) taken — "
+                        + "; ".join(f"{e['action']}({e.get('intent', '')[:40]})"
+                                    for e in result["transcript"][:4]))
+            return result
+        except Exception as exc:
+            self.bus.publish(
+                "agent_message", agent="Verifier",
+                content=f"[computer_use] unavailable this round, falling back "
+                        f"to static screenshot: {type(exc).__name__}: {exc}")
+            return None
+
     # ================================================== standard mode
 
     def _run_standard(self, ctx) -> dict:
@@ -460,23 +494,29 @@ class Orchestrator:
             self.ledger.handoff("Coder", "Verifier", verify_task.id,
                                 self.ledger.packet_for(verify_task.id, round=rnd))
             self.ledger.update(verify_task.id, status="in_progress")
-            shot = run_dir / f"shot-round{rnd}.png"
-            ok, note = take_screenshot(repo / page, shot)
-            attachments = [shot, mockup] if (ok and mockup.exists()) else (
-                [mockup] if mockup.exists() else None)
-            vprompt = (
-                f"{self._meta(issue=issue_id, sub='UI', round=rnd, mode=ctx.mode)}\n\n"
-                f"Mockup attached. Rendering note: {note}\n")
-            if not ok:
-                vprompt += (f"\nPAGE HTML SOURCE (fallback for screenshot):\n"
-                            f"{self._embed_files(repo, [page], 6000)}")
-            verifier = self._agent("verifier")
-            ver = verifier.run(vprompt, task_id=verify_task.id,
-                               attachments=attachments)
-            verdict = ((ver.data or {}).get("verdict") or "mismatch").lower()
-            issues = (ver.data or {}).get("issues", [])
+
+            interactive = self._interactive_visual_verify(ctx, repo, page, mockup)
+            if interactive is not None:
+                verdict, issues = interactive["verdict"], interactive["issues"]
+            else:
+                shot = run_dir / f"shot-round{rnd}.png"
+                ok, note = take_screenshot(repo / page, shot)
+                attachments = [shot, mockup] if (ok and mockup.exists()) else (
+                    [mockup] if mockup.exists() else None)
+                vprompt = (
+                    f"{self._meta(issue=issue_id, sub='UI', round=rnd, mode=ctx.mode)}\n\n"
+                    f"Mockup attached. Rendering note: {note}\n")
+                if not ok:
+                    vprompt += (f"\nPAGE HTML SOURCE (fallback for screenshot):\n"
+                                f"{self._embed_files(repo, [page], 6000)}")
+                verifier = self._agent("verifier")
+                ver = verifier.run(vprompt, task_id=verify_task.id,
+                                   attachments=attachments)
+                verdict = ((ver.data or {}).get("verdict") or "mismatch").lower()
+                issues = (ver.data or {}).get("issues", [])
             self.bus.publish("verify_verdict", round=rnd, verdict=verdict,
-                             issues=issues)
+                             issues=issues,
+                             method="computer_use" if interactive else "screenshot")
             if verdict == "match":
                 matched = True
                 self.ledger.update(verify_task.id, status="done", note="match")

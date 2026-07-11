@@ -260,7 +260,8 @@ function handle(e) {
       break;
     case "verify_verdict":
       feed(e.verdict === "match" ? "good" : "warn", "Verifier",
-        `👁 round ${e.round}: ${e.verdict}`, (e.issues || []).join(" · "));
+        `👁 round ${e.round}${e.method === "computer_use" ? " [computer_use]" : ""}: ${e.verdict}`,
+        (e.issues || []).join(" · "));
       break;
     case "intake_result":
       feed("good", "Intake", `🎙 "${e.title}" [${e.detected_language || "?"}]`);

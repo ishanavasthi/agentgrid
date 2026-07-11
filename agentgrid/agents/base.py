@@ -23,7 +23,7 @@ class Agent:
         self.toolbox = toolbox
 
     def run(self, prompt: str, task_id: str | None = None,
-            attachments: list | None = None, max_steps: int = 12) -> FinalResult:
+            attachments: list | None = None, max_steps: int = 24) -> FinalResult:
         conv_id = new_id("conv-")
         messages: list[dict] = [{"role": "user", "content": prompt}]
         if attachments:
@@ -41,7 +41,8 @@ class Agent:
                         self.ledger.message(self.role.title, turn.text, task_id=task_id)
                     messages.append({
                         "role": "assistant", "content": turn.text or "",
-                        "tool_calls": [{"id": c.id, "name": c.name, "args": c.args}
+                        "tool_calls": [{"id": c.id, "name": c.name, "args": c.args,
+                                        "thought_signature": c.thought_signature}
                                        for c in turn.tool_calls]})
                     for call in turn.tool_calls:
                         self.bus.publish("tool_call", agent=self.role.title,

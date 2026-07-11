@@ -12,8 +12,13 @@ accepting issues **by voice note in Hinglish**.
 
 The entire pipeline runs offline with **zero third-party dependencies**
 (deterministic mock backend; every file write, git branch, merge conflict
-and unittest run is real) and switches to **Gemini 3.5 Flash + Managed
-Agents** the moment a `GEMINI_API_KEY` lands in `.env`.
+and unittest run is real) and switches to **live Gemini function-calling**
+the moment a `GEMINI_API_KEY` lands in `.env` — with a Managed Agents
+hybrid path that activates automatically once the SDK exposes
+`client.agents`/`client.interactions` (feature-detected; verified absent
+in google-genai 1.47.0, the latest on PyPI as of 2026-07-11 — falls back
+to pure function-calling for every role until then, no behavior change
+needed).
 
 ---
 
@@ -30,10 +35,15 @@ python3 -m unittest discover -s tests -t . # unit + e2e suite (13 tests)
 
 ```bash
 cp .env.example .env                # then paste GEMINI_API_KEY=...
-pip install "google-genai>=2.0.0"   # Tier 1 — required for real agents
-python3 -m agentgrid doctor         # verifies key, SDK, model ids, surfaces
-python3 -m agentgrid run --issue ISSUE-1 --backend managed
+pip install google-genai            # Tier 1 — required for real agents
+python3 -m agentgrid doctor --probe # verifies key, SDK, model ids, surfaces, live round-trip
+python3 -m agentgrid run --issue ISSUE-1 --backend gemini
 ```
+
+`doctor` lists exactly which model ids your key can reach — pick one via
+`AGENTGRID_MODEL` in `.env` (verified working: `gemini-flash-latest`).
+`--backend managed` needs `client.agents`/`client.interactions`, which
+aren't in any google-genai release yet; `auto`/`gemini` work today.
 
 Optional extras:
 

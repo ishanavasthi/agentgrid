@@ -17,8 +17,12 @@ client-side function calling → HybridBackend routes those to
 GeminiBackend. That split — managed agents for judgment, function-calling
 agents for hands-on-disk work — is the architecture story for judges.
 
-NOTE(day-of): surface is feature-detected; verify with `agentgrid doctor`
-once the API key is live and adjust field names here if the SDK differs.
+NOTE: as of google-genai 1.47.0 (latest on PyPI, verified live 2026-07-11),
+`client.agents`/`client.interactions` do not exist yet — this backend is
+feature-detected and HybridBackend transparently falls back to pure
+Gemini function-calling for every role. Re-verify with `agentgrid doctor`
+if a newer SDK ships before judging; adjust field names here if it differs
+from this quickstart.
 """
 
 from __future__ import annotations
@@ -38,8 +42,12 @@ class ManagedAgentsBackend(LLMBackend):
         self.client = genai.Client(api_key=settings.api_key)
         if not (hasattr(self.client, "agents") and hasattr(self.client, "interactions")):
             raise BackendUnavailable(
-                "installed google-genai has no agents/interactions surface — "
-                "upgrade: pip install -U 'google-genai>=2.0.0'")
+                "installed google-genai (latest on PyPI as of this build) has no "
+                "agents/interactions surface yet — HybridBackend falls back to "
+                "pure Gemini function-calling for every role. Re-run "
+                "`python3 -m agentgrid doctor` after a google-genai upgrade to "
+                "recheck; pip install -U google-genai to pick up a newer release "
+                "if one has since shipped Managed Agents.")
         self.base_agent = settings.base_agent
         self._agent_ids: dict[str, str] = {}
         # conv_id -> (previous_interaction_id, environment_id)

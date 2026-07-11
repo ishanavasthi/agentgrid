@@ -50,6 +50,7 @@ class ToolCall:
     id: str
     name: str
     args: dict
+    thought_signature: bytes | None = None
 
 
 @dataclass

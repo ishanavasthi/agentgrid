@@ -97,5 +97,5 @@ def run_smoke(verbose: bool = True) -> bool:
         print(f"\n{verdict}  ({sum(results)}/{len(results)})")
         if ok:
             print("Tomorrow: put GEMINI_API_KEY in .env, pip install "
-                  "'google-genai>=2.0.0', then `python3 -m agentgrid doctor`.")
+                  "google-genai, then `python3 -m agentgrid doctor --probe`.")
     return ok

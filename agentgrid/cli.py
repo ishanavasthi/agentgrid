@@ -153,9 +153,9 @@ def cmd_doctor(args) -> int:
         import google.genai as genai  # type: ignore
         ver = getattr(genai, "__version__", "?")
         sdk_ok = True
-        note = f"v{ver} (need >= 2.0.0 for Interactions/Managed Agents)"
+        note = f"v{ver} (Managed Agents needs client.agents/interactions — see doctor row below)"
     except ImportError:
-        sdk_ok, note = False, "pip install 'google-genai>=2.0.0'"
+        sdk_ok, note = False, "pip install google-genai"
     rows.append(("google-genai SDK", sdk_ok, note))
 
     if s.has_key and sdk_ok:

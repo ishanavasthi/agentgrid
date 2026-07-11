@@ -1,8 +1,9 @@
-"""GeminiBackend — real function-calling agents on gemini-3.5-flash.
+"""GeminiBackend — real function-calling agents on a Gemini flash model.
 
-Uses google-genai (>= 2.0.0). Lazy imports keep the offline/mock path
-free of the dependency. Per Gemini 3.5 guidance: no temperature/top_p
-overrides, and function responses echo both `id` and `name`.
+Uses google-genai (tested against 1.47.0, the latest on PyPI). Lazy
+imports keep the offline/mock path free of the dependency. Function
+responses echo both `id` and `name`; multi-turn function-call parts must
+echo back `thought_signature` verbatim or the API 400s.
 """
 
 from __future__ import annotations
@@ -22,7 +23,7 @@ def _load_sdk():
         return genai, types
     except ImportError as exc:
         raise BackendUnavailable(
-            "google-genai is not installed. Run: pip install 'google-genai>=2.0.0'"
+            "google-genai is not installed. Run: pip install google-genai"
         ) from exc
 
 
@@ -67,8 +68,10 @@ class GeminiBackend(LLMBackend):
                 if msg.get("content"):
                     parts.append(self._part_text(msg["content"]))
                 for call in msg.get("tool_calls", []):
-                    parts.append(types.Part(function_call=types.FunctionCall(
-                        id=call.get("id"), name=call["name"], args=call.get("args", {}))))
+                    parts.append(types.Part(
+                        function_call=types.FunctionCall(
+                            id=call.get("id"), name=call["name"], args=call.get("args", {})),
+                        thought_signature=call.get("thought_signature")))
                 contents.append(types.Content(role="model", parts=parts or [self._part_text("")]))
             elif role == "tool":
                 # Gemini 3.5: function responses must carry matching id AND name.
@@ -109,7 +112,8 @@ class GeminiBackend(LLMBackend):
                 if fc is not None and getattr(fc, "name", None):
                     turn.tool_calls.append(ToolCall(
                         id=getattr(fc, "id", None) or new_id("call-"),
-                        name=fc.name, args=dict(fc.args or {})))
+                        name=fc.name, args=dict(fc.args or {}),
+                        thought_signature=getattr(part, "thought_signature", None)))
                 elif getattr(part, "text", None):
                     turn.text += part.text
         return turn
@@ -155,7 +159,8 @@ def probe_live(settings) -> list[tuple[str, bool, str]]:
         call = turn.tool_calls[0]
         messages.append({"role": "assistant", "content": turn.text or "",
                          "tool_calls": [{"id": call.id, "name": call.name,
-                                         "args": call.args}]})
+                                         "args": call.args,
+                                         "thought_signature": call.thought_signature}]})
         messages.append({"role": "tool", "tool_call_id": call.id,
                          "name": call.name, "content": "pong"})
         final = backend.chat("probe", "You are a tool-use health check.",

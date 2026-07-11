@@ -176,8 +176,16 @@ class Orchestrator:
         chunks = []
         for rel in paths or []:
             p = root / rel
-            if p.exists() and p.is_file():
-                chunks.append(f"--- {rel} ---\n{truncate(p.read_text(encoding='utf-8'), limit)}")
+            if not (p.exists() and p.is_file()):
+                continue
+            try:
+                text = p.read_text(encoding="utf-8")
+            except UnicodeDecodeError:
+                chunks.append(f"--- {rel} ---\n(binary file, {p.stat().st_size} bytes — "
+                              f"not shown; this file should not be part of a real "
+                              f"conflict/diff and can likely be deleted)")
+                continue
+            chunks.append(f"--- {rel} ---\n{truncate(text, limit)}")
         return "\n\n".join(chunks)
 
     def _ledger_digest(self) -> str:

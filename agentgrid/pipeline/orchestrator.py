@@ -684,6 +684,17 @@ class Orchestrator:
         if lines and lines[0].startswith("# "):
             title = lines[0][2:].strip()
             body = "\n".join(lines[1:]).strip()
+
+        # Format the PR title to follow: Fix #{issue_number}: {issue_title}
+        if ctx.issue_id.startswith("issue-"):
+            issue_number = ctx.issue_id.split("-")[-1]
+            issue_title = ""
+            if ctx.issue_text:
+                first_line = ctx.issue_text.splitlines()[0]
+                if first_line.startswith("# "):
+                    issue_title = first_line.lstrip("# ").strip()
+            if issue_number and issue_title:
+                title = f"Fix #{issue_number}: {issue_title}"
         pr = publish_pr(repo, branch, title, body, ctx.run_dir,
                         self.settings.github_repo)
         pr["title"] = title

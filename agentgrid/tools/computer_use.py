@@ -14,6 +14,7 @@ git worktree).
 
 from __future__ import annotations
 
+import os
 import time
 
 SCREEN_WIDTH = 1280
@@ -31,8 +32,11 @@ def _denorm(value: int | None, span: int) -> int | None:
 class BrowserSession:
     def __init__(self, allowed_prefix: str) -> None:
         from playwright.sync_api import sync_playwright  # type: ignore
+        headed = os.environ.get("AGENTGRID_CU_HEADED", "").strip().lower() in (
+            "1", "true", "yes")
         self._pw = sync_playwright().start()
-        self._browser = self._pw.chromium.launch()
+        self._browser = self._pw.chromium.launch(
+            headless=not headed, slow_mo=350 if headed else 0)
         self._context = self._browser.new_context(
             viewport={"width": SCREEN_WIDTH, "height": SCREEN_HEIGHT})
         self.page = self._context.new_page()

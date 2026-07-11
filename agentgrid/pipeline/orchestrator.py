@@ -10,6 +10,7 @@ Modes
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import time
@@ -190,10 +191,12 @@ class Orchestrator:
                                    mockup: Path) -> dict | None:
         """Try the Computer Use interactive Verifier. Returns a result
         dict on success, or None if this path isn't usable right now
-        (mock backend, no key, missing playwright/SDK, model/API error,
-        safety stop) — callers must fall back to the static-screenshot
-        Verifier in that case. Never raises."""
-        if self.backend.name == "mock" or not self.settings.has_key:
+        (mock backend, no key, disabled via AGENTGRID_CU_DISABLE, missing
+        playwright/SDK, model/API error, safety stop) — callers must fall
+        back to the static-screenshot Verifier in that case. Never raises."""
+        disabled = os.environ.get("AGENTGRID_CU_DISABLE", "").strip().lower() in (
+            "1", "true", "yes")
+        if disabled or self.backend.name == "mock" or not self.settings.has_key:
             return None
         try:
             from ..llm.computer_use import run_interactive_verify

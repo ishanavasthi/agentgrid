@@ -140,8 +140,14 @@ def cmd_doctor(args) -> int:
     rows: list[tuple[str, bool, str]] = []
 
     py_ok = sys.version_info >= (3, 9)
-    rows.append((f"python {sys.version.split()[0]}", py_ok,
-                 "need >= 3.9 (3.10+ recommended)"))
+    py_tier = ("full live/managed support" if sys.version_info >= (3, 10)
+               else "mock backend only for Managed Agents")
+    rows.append((f"python {sys.version.split()[0]} ({py_tier})", py_ok,
+                 "need >= 3.10 for the real Managed Agents surface — "
+                 "google-genai >= 2.0 requires it, and pip silently installs "
+                 "the last 3.9-compatible release (1.47.0, no agents/"
+                 "interactions) on older Python. Run agentgrid from a "
+                 "Python >= 3.10 venv."))
     rows.append(("git", shutil.which("git") is not None, "brew install git"))
     rows.append(("demo template", TEMPLATE_DIR.exists(), "repo incomplete?"))
     rows.append(("demo origin seeded", ORIGIN_BARE.exists(),
@@ -175,7 +181,11 @@ def cmd_doctor(args) -> int:
                                "(override per-run: AGENTGRID_MODEL=...)"))
             rows.append(("managed agents surface (client.agents)",
                          hasattr(client, "agents") and hasattr(client, "interactions"),
-                         "hybrid falls back to pure function-calling if absent"))
+                         "usually a Python version issue, not a missing feature: "
+                         "needs google-genai >= 2.0, which needs Python >= 3.10 "
+                         "(see python row above). Run from a Python >= 3.10 venv "
+                         "and re-check; hybrid falls back to pure function-calling "
+                         "either way, so the pipeline still runs."))
         except Exception as exc:
             rows.append(("API reachability", False, f"{type(exc).__name__}: {exc}"))
 

@@ -1,4 +1,6 @@
 PROBLEM.md
+COMPUTER_USE.md
+DEMO.md
 __pycache__/
 *.pyc
 .env

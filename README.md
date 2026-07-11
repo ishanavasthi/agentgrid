@@ -13,12 +13,17 @@ accepting issues **by voice note in Hinglish**.
 The entire pipeline runs offline with **zero third-party dependencies**
 (deterministic mock backend; every file write, git branch, merge conflict
 and unittest run is real) and switches to **live Gemini function-calling**
-the moment a `GEMINI_API_KEY` lands in `.env` — with a Managed Agents
-hybrid path that activates automatically once the SDK exposes
-`client.agents`/`client.interactions` (feature-detected; verified absent
-in google-genai 1.47.0, the latest on PyPI as of 2026-07-11 — falls back
-to pure function-calling for every role until then, no behavior change
-needed).
+the moment a `GEMINI_API_KEY` lands in `.env` — with a real Managed
+Agents hybrid path (`client.agents`/`client.interactions`, confirmed
+live end-to-end 2026-07-11 on google-genai 2.11.0) for the tool-less
+reasoning roles, and Gemini function-calling for roles that touch the
+local repo. The Managed Agents surface needs **Python >= 3.10**
+specifically — google-genai dropped 3.9 support after 1.47.0, and pip
+silently installs that older, surface-less release on 3.9 with no error.
+Feature-detected either way: HybridBackend falls back to pure
+function-calling for every role if the surface isn't there, so the
+pipeline never breaks — it just quietly loses the Managed Agents story
+on old Python.
 
 ---
 
@@ -31,19 +36,31 @@ python3 -m agentgrid run --issue ISSUE-1   # one pipeline in the terminal
 python3 -m unittest discover -s tests -t . # unit + e2e suite (13 tests)
 ```
 
-## Going live (tomorrow — plug the key)
+## Going live (plug the key)
 
 ```bash
+python3.10 -m venv .venv && source .venv/bin/activate  # MUST be >= 3.10 —
+                                                          # see note below
 cp .env.example .env                # then paste GEMINI_API_KEY=...
 pip install google-genai            # Tier 1 — required for real agents
 python3 -m agentgrid doctor --probe # verifies key, SDK, model ids, surfaces, live round-trip
-python3 -m agentgrid run --issue ISSUE-1 --backend gemini
+python3 -m agentgrid run --issue ISSUE-1 --backend auto
 ```
 
+**Use a Python >= 3.10 interpreter for the venv.** On Python 3.9, `pip
+install google-genai` silently resolves to 1.47.0 (the last
+3.9-compatible release) instead of the real 2.x line — it installs
+cleanly, `doctor` shows everything green except a plain "surface absent"
+on the managed-agents row, and there's no error pointing at the actual
+cause. `gemini`/`auto`/mock backends work fine on 3.9 either way; only
+the real Managed Agents path needs 3.10+.
+
 `doctor` lists exactly which model ids your key can reach — pick one via
-`AGENTGRID_MODEL` in `.env` (verified working: `gemini-flash-latest`).
-`--backend managed` needs `client.agents`/`client.interactions`, which
-aren't in any google-genai release yet; `auto`/`gemini` work today.
+`AGENTGRID_MODEL` in `.env` (verified working: `gemini-3.5-flash`,
+`gemini-flash-latest`). `--backend managed`/`auto` use the real
+`client.agents`/`client.interactions` surface when Python >= 3.10 +
+google-genai >= 2.0 are both present; otherwise they fall back to
+`gemini` (pure function-calling) automatically.
 
 Optional extras:
 
@@ -88,12 +105,14 @@ inspection, and the Publisher pushes to a local bare origin + writes
             │
        LLM backends (swappable, one interface — llm/base.py):
          mock     deterministic fixtures; tools execute for real (today)
-         gemini   gemini-3.5-flash function calling (google-genai ≥ 2.0)
+         gemini   gemini-3.5-flash function calling (any google-genai
+                  release, Python >= 3.9 is fine)
          managed  Managed Agents (antigravity-preview-05-2026) via the
                   Interactions API for reasoning roles (Planner, Reviewer,
                   Verifier, Intake, Publisher) + gemini function calling
                   for roles that edit local files (Coder, Integrator,
                   Breaker)  ← the hybrid is the architecture story
+                  (needs google-genai >= 2.0, which needs Python >= 3.10)
 ```
 
 Design decisions that matter in judging Q&A:
@@ -140,6 +159,7 @@ every run clones fresh, so demos reset for free.
 | Tier | What | Needed for |
 |------|------|------------|
 | 0 | Python ≥ 3.9 + git — **nothing to pip install** | smoke, mock runs, dashboard, unit tests |
-| 1 | `pip install "google-genai>=2.0.0"` + `GEMINI_API_KEY` | real Gemini / Managed Agents runs |
+| 1 | Python ≥ 3.9, `pip install google-genai` + `GEMINI_API_KEY` | real Gemini function-calling runs (`--backend gemini`) |
+| 1.5 | **Python ≥ 3.10** venv, `pip install google-genai` (resolves to 2.x) | real Managed Agents runs (`--backend managed`/`auto`) — on Python 3.9 the same pip command silently installs 1.47.0 instead, which lacks the surface entirely |
 | 2 | `pip install playwright` + `playwright install chromium` | real screenshots in visual mode (optional) |
 | 3 | `gh` CLI authenticated + `GITHUB_REPO` in `.env` | real GitHub PRs (optional) |

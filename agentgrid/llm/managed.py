@@ -17,12 +17,15 @@ client-side function calling → HybridBackend routes those to
 GeminiBackend. That split — managed agents for judgment, function-calling
 agents for hands-on-disk work — is the architecture story for judges.
 
-NOTE: as of google-genai 1.47.0 (latest on PyPI, verified live 2026-07-11),
-`client.agents`/`client.interactions` do not exist yet — this backend is
-feature-detected and HybridBackend transparently falls back to pure
-Gemini function-calling for every role. Re-verify with `agentgrid doctor`
-if a newer SDK ships before judging; adjust field names here if it differs
-from this quickstart.
+NOTE: `client.agents`/`client.interactions` require google-genai >= 2.0,
+which itself requires Python >= 3.10 (PyPI's requires_python metadata;
+verified live 2026-07-11 on google-genai 2.11.0 under Python 3.12).
+Under Python 3.9, pip silently resolves to the last 3.9-compatible
+release (1.47.0), which lacks this surface entirely — `agentgrid doctor`
+will show "managed agents surface" as absent with no further explanation
+in that case. Run agentgrid from a Python >= 3.10 venv to get the real
+surface; HybridBackend transparently falls back to pure Gemini
+function-calling for every role if it's unavailable either way.
 """
 
 from __future__ import annotations
@@ -42,12 +45,15 @@ class ManagedAgentsBackend(LLMBackend):
         self.client = genai.Client(api_key=settings.api_key)
         if not (hasattr(self.client, "agents") and hasattr(self.client, "interactions")):
             raise BackendUnavailable(
-                "installed google-genai (latest on PyPI as of this build) has no "
-                "agents/interactions surface yet — HybridBackend falls back to "
-                "pure Gemini function-calling for every role. Re-run "
-                "`python3 -m agentgrid doctor` after a google-genai upgrade to "
-                "recheck; pip install -U google-genai to pick up a newer release "
-                "if one has since shipped Managed Agents.")
+                "installed google-genai has no agents/interactions surface — "
+                "HybridBackend falls back to pure Gemini function-calling for "
+                "every role. This is almost always a Python version issue: "
+                "google-genai >= 2.0 (required for this surface) needs Python "
+                ">= 3.10, and pip silently installs the last 3.9-compatible "
+                "release (1.47.0, no agents/interactions) on older Python. "
+                "Run agentgrid from a Python >= 3.10 venv with "
+                "`pip install -U google-genai`, then re-check with "
+                "`python3 -m agentgrid doctor`.")
         self.base_agent = settings.base_agent
         self._agent_ids: dict[str, str] = {}
         # conv_id -> (previous_interaction_id, environment_id)
@@ -59,13 +65,21 @@ class ManagedAgentsBackend(LLMBackend):
         agent_id = f"agentgrid-{role}"
         try:
             self.client.agents.create(
-                id=agent_id,
-                base_agent=self.base_agent,
-                system_instruction=system,
-            )
-        except Exception as exc:  # already exists from a prior run → reuse
+                id=agent_id, base_agent=self.base_agent, system_instruction=system)
+        except Exception as exc:
             if "exist" not in str(exc).lower() and "409" not in str(exc):
                 raise BackendUnavailable(f"agents.create failed: {exc}") from exc
+            # Agent id already exists server-side from an earlier process —
+            # client.agents has no update(), and reusing it as-is would
+            # silently keep serving whatever system_instruction it was
+            # FIRST created with, even after roster.py's prompt changes.
+            # Recreate so the live agent always matches the code.
+            try:
+                self.client.agents.delete(id=agent_id)
+                self.client.agents.create(
+                    id=agent_id, base_agent=self.base_agent, system_instruction=system)
+            except Exception as exc2:
+                raise BackendUnavailable(f"agents recreate failed: {exc2}") from exc2
         self._agent_ids[role] = agent_id
         return agent_id
 

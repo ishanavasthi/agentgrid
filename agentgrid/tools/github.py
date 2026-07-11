@@ -35,6 +35,10 @@ def publish_pr(repo_dir: Path, branch: str, title: str, body: str,
 
     target = github_repo or os.environ.get("GITHUB_REPO", "")
     if target and has_gh():
+        # Point the origin remote to the live repository so we can push to it for real
+        subprocess.run(["git", "remote", "set-url", "origin", f"https://github.com/{target}.git"], cwd=str(repo_dir))
+        subprocess.run(["git", "push", "-f", "origin", branch], cwd=str(repo_dir))
+
         proc = subprocess.run(
             ["gh", "pr", "create", "--repo", target, "--head", branch,
              "--title", title, "--body", body],

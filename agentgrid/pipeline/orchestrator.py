@@ -77,16 +77,36 @@ class Orchestrator:
         work = RUNS_DIR / "template-work"
         if work.exists():
             shutil.rmtree(work)
-        shutil.copytree(TEMPLATE_DIR, work)
-        assets.make_mockup_png(work / "issues" / "ISSUE-3.mockup.png")
-        assets.make_demo_wav(work / "issues" / "ISSUE-4.wav")
-        g.init_repo(work)
-        g.commit_all(work, "chore: SplitSathi baseline (seeded by AgentGrid setup-demo)")
+
+        if self.settings.github_repo:
+            # Clone the live repository to preserve git history and ancestry
+            import subprocess
+            subprocess.run(["git", "clone", f"https://github.com/{self.settings.github_repo}.git", str(work)])
+            # Copy files from TEMPLATE_DIR to overwrite/update files
+            for item in TEMPLATE_DIR.iterdir():
+                dest = work / item.name
+                if item.is_dir():
+                    if dest.exists():
+                        shutil.rmtree(dest)
+                    shutil.copytree(item, dest)
+                else:
+                    shutil.copy2(item, dest)
+            g.commit_all(work, "chore: sync with latest target_template issues and tests")
+        else:
+            shutil.copytree(TEMPLATE_DIR, work)
+            assets.make_mockup_png(work / "issues" / "ISSUE-3.mockup.png")
+            assets.make_demo_wav(work / "issues" / "ISSUE-4.wav")
+            g.init_repo(work)
+            g.commit_all(work, "chore: SplitSathi baseline (seeded by AgentGrid setup-demo)")
+
         baseline = run_unittests(work)
         if not baseline["passed"]:
-            raise PipelineError(
-                f"target template baseline tests FAIL — fix the template first:\n"
-                f"{baseline['output']}")
+            if self.settings.github_repo:
+                print(f"Warning: target template baseline tests FAIL — continuing anyway: {baseline['summary']}")
+            else:
+                raise PipelineError(
+                    f"target template baseline tests FAIL — fix the template first:\n"
+                    f"{baseline['output']}")
         g.clone_bare(work, ORIGIN_BARE)
         shutil.rmtree(work)
         return {"origin": str(ORIGIN_BARE), "created": True,

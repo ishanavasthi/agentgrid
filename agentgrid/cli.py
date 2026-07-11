@@ -195,6 +195,23 @@ def cmd_doctor(args) -> int:
     backend_name = s.backend_pref
     print(f"\nbackend preference: {backend_name} "
           f"(resolves to {'live Gemini' if s.has_key else 'mock'} today)")
+
+    if getattr(args, "probe", False):
+        if not (s.has_key and sdk_ok):
+            print(color("\n--probe needs GEMINI_API_KEY + google-genai installed", "red"))
+            return 1
+        print(color("\nlive probe (~200 tokens, retries on rate limits)…", "bold"))
+        from .llm.gemini import probe_live
+        probe_ok = True
+        for label, ok, note in probe_live(s):
+            mark = color("✓", "green") if ok else color("✗", "red")
+            probe_ok &= ok
+            print(f" {mark} {label}  {color('— ' + note, 'dim')}")
+        print(color("probe PASSED — the live pipeline path works",
+                    "green") if probe_ok
+              else color("probe FAILED — fix before relying on live runs", "red"))
+        return 0 if probe_ok else 1
+
     print("smoke anytime: python3 -m agentgrid smoke")
     return 0
 
@@ -228,6 +245,9 @@ def main(argv: list[str] | None = None) -> int:
     p.set_defaults(fn=cmd_smoke)
 
     p = sub.add_parser("doctor", help="environment/dependency checkup")
+    p.add_argument("--probe", action="store_true",
+                   help="also make 2 tiny live API calls to validate the "
+                        "real Gemini path (needs key + SDK; ~200 tokens)")
     p.set_defaults(fn=cmd_doctor)
 
     p = sub.add_parser("issues", help="list demo issues")

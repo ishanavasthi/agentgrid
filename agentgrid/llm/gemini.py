@@ -12,7 +12,7 @@ from pathlib import Path
 
 from ..errors import BackendUnavailable, ConfigError
 from ..util import new_id
-from .base import LLMBackend, LLMTurn, ToolCall
+from .base import LLMBackend, LLMTurn, ToolCall, call_with_retry
 
 
 def _load_sdk():
@@ -96,11 +96,11 @@ class GeminiBackend(LLMBackend):
             system_instruction=system,
             tools=self._tool_config(tools),
         )
-        response = self.client.models.generate_content(
-            model=self.model,
-            contents=self._to_contents(messages),
-            config=config,
-        )
+        contents = self._to_contents(messages)
+        response = call_with_retry(
+            lambda: self.client.models.generate_content(
+                model=self.model, contents=contents, config=config),
+            what=f"gemini/{role}")
         turn = LLMTurn()
         candidate = response.candidates[0] if response.candidates else None
         if candidate and candidate.content and candidate.content.parts:
@@ -113,3 +113,56 @@ class GeminiBackend(LLMBackend):
                 elif getattr(part, "text", None):
                     turn.text += part.text
         return turn
+
+
+def probe_live(settings) -> list[tuple[str, bool, str]]:
+    """Two minimal live calls (~200 tokens total) that exercise the exact
+    code paths the pipeline uses: plain generation, then a full
+    function-calling round trip through the message-conversion layer.
+    Cheap enough for a severely rate-limited key."""
+    from ..tools.base import ToolSpec
+    results = []
+    backend = GeminiBackend(settings)
+
+    # 1. plain text turn
+    try:
+        turn = backend.chat("probe", "You are a health check. Obey exactly.",
+                            [{"role": "user", "content": "Reply with exactly: OK"}],
+                            tools=[])
+        ok = "OK" in (turn.text or "").upper()
+        results.append(("text generation", ok, (turn.text or "").strip()[:60]))
+    except Exception as exc:
+        results.append(("text generation", False, f"{type(exc).__name__}: {exc}"))
+        return results  # no point probing further
+
+    # 2. function-calling round trip (call -> tool result -> final)
+    ping = ToolSpec(name="ping",
+                    description="Return the service status. Call this exactly once.",
+                    parameters={"type": "object",
+                                "properties": {"target": {"type": "string"}},
+                                "required": ["target"]},
+                    fn=None)
+    messages = [{"role": "user",
+                 "content": "Call the ping tool with target='demo', then after "
+                            "you see its result reply with exactly: DONE"}]
+    try:
+        turn = backend.chat("probe", "You are a tool-use health check.",
+                            messages, tools=[ping])
+        if not turn.tool_calls:
+            results.append(("function calling", False,
+                            f"no tool call returned (text: {(turn.text or '')[:60]})"))
+            return results
+        call = turn.tool_calls[0]
+        messages.append({"role": "assistant", "content": turn.text or "",
+                         "tool_calls": [{"id": call.id, "name": call.name,
+                                         "args": call.args}]})
+        messages.append({"role": "tool", "tool_call_id": call.id,
+                         "name": call.name, "content": "pong"})
+        final = backend.chat("probe", "You are a tool-use health check.",
+                             messages, tools=[ping])
+        results.append(("function calling round-trip", final.is_final,
+                        (final.text or "").strip()[:60]))
+    except Exception as exc:
+        results.append(("function calling round-trip", False,
+                        f"{type(exc).__name__}: {exc}"))
+    return results

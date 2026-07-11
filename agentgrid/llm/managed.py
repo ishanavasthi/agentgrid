@@ -24,7 +24,7 @@ once the API key is live and adjust field names here if the SDK differs.
 from __future__ import annotations
 
 from ..errors import BackendUnavailable, ConfigError
-from .base import LLMBackend, LLMTurn
+from .base import LLMBackend, LLMTurn, call_with_retry
 from .gemini import GeminiBackend, _load_sdk
 
 
@@ -82,7 +82,9 @@ class ManagedAgentsBackend(LLMBackend):
                 f"[{m['role'].upper()}]\n{m.get('content', '')}" for m in messages)
             kwargs = {"agent": agent_id, "input": transcript, "environment": "remote"}
 
-        interaction = self.client.interactions.create(**kwargs)
+        interaction = call_with_retry(
+            lambda: self.client.interactions.create(**kwargs),
+            what=f"managed/{role}")
         if conv_id:
             self._conversations[conv_id] = (
                 interaction.id, getattr(interaction, "environment_id", None))

@@ -74,6 +74,32 @@ def run_interactive_verify(settings, page_path: Path, task_prompt: str,
     target_url = f"file://{resolved}"
     allowed_prefix = f"file://{resolved.parent}"
 
+    import socket
+    import shutil
+    import subprocess
+    import time
+
+    server_process = None
+
+    # Adaptive local server spawning for dynamic React / JavaScript apps
+    if (resolved.parent / "package.json").exists() and shutil.which("npm") is not None:
+        try:
+            # Find a free TCP port dynamically
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.bind(('127.0.0.1', 0))
+            port = sock.getsockname()[1]
+            sock.close()
+
+            # Spawn the dev server in the background
+            server_process = subprocess.Popen(
+                ["npm", "start", "--", f"--port={port}"],
+                cwd=str(resolved.parent), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            time.sleep(4)  # wait for boot
+            target_url = f"http://localhost:{port}"
+            allowed_prefix = f"http://localhost:{port}"
+        except Exception:
+            pass
+
     session = BrowserSession(allowed_prefix=allowed_prefix)
     try:
         session.goto(target_url)
@@ -140,6 +166,12 @@ def run_interactive_verify(settings, page_path: Path, task_prompt: str,
                 "issues": ["stopped: exceeded max turns without a verdict"]}
     finally:
         session.close()
+        if server_process is not None:
+            try:
+                server_process.terminate()
+                server_process.wait(timeout=3)
+            except Exception:
+                pass
 
 
 def _parse_verdict(text: str) -> tuple[str, list[str]]:

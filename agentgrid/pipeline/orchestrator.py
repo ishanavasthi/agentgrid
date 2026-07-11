@@ -459,7 +459,20 @@ class Orchestrator:
 
     def _run_visual(self, ctx) -> dict:
         issue_id, repo, run_dir = ctx.issue_id, ctx.repo, ctx.run_dir
-        page = ctx.front.get("page", "web/index.html")
+        
+        # Adaptive page resolution for arbitrary cloned repos in visual mode
+        page = ctx.front.get("page", "")
+        if not page:
+            if (repo / "web/index.html").exists():
+                page = "web/index.html"
+            else:
+                # Search recursively for any index.html file (e.g. in public/ or root)
+                candidates = list(repo.rglob("index.html"))
+                if candidates:
+                    page = str(candidates[0].relative_to(repo))
+                else:
+                    page = "index.html" # Fallback
+                    
         mockup = repo / ctx.front.get("mockup", f"issues/{issue_id}.mockup.png")
         branch = f"ui/{issue_id.lower()}"
         g.checkout_new(repo, branch, "main")

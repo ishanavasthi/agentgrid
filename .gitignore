@@ -1,6 +1,7 @@
 PROBLEM.md
 COMPUTER_USE.md
 DEMO.md
+SCRIPT.md
 __pycache__/
 *.pyc
 .env

@@ -86,7 +86,7 @@ inspection, and the Publisher pushes to a local bare origin + writes
 | 5 | Live dashboard (SSE, agent graph, feed, ledger board — stdlib server, no CDNs) | `server/` |
 | 6 | PR finale (gh CLI when available; local push + preview always) | `tools/github.py` |
 | 7 | Breaker/Fixer adversarial TDD (failing spec tests until concession) | `_run_adversarial` |
-| 8 | Screenshot-to-feature with visual Verifier (Gemini vision / HTML fallback) | `_run_visual` |
+| 8 | Screenshot-to-feature with an **interactive Computer Use Verifier** — drives a real browser (click/scroll/type) via Gemini 3.5 Flash's `computer_use` tool to check the fix, not just a static screenshot diff; falls back to vision-on-screenshot / HTML source if unavailable | `_run_visual`, `llm/computer_use.py`, `tools/computer_use.py` |
 | 9 | Voice-issue intake (Hinglish audio → structured issue) + legacy modernization | `_run_voice` |
 
 ## Architecture
@@ -148,11 +148,15 @@ every run clones fresh, so demos reset for free.
    Coders in parallel; Reviewer **rejects** the float fix; Coder rebuilds
    on Decimal; **merge conflict flashes**; Integrator resolves; tests go
    green; PR appears. (~90s)
-2. **ISSUE-2** adversarial: Breaker plants red tests, Coder answers,
+2. **ISSUE-3** visual: the Verifier drives a real browser via Gemini's
+   **Computer Use** tool — clicking/scrolling the live page itself
+   (`AGENTGRID_CU_HEADED=1` to watch the window) instead of judging a
+   static screenshot. (~20s)
+3. **ISSUE-2** adversarial: Breaker plants red tests, Coder answers,
    Breaker concedes. (~45s)
-3. **ISSUE-4** voice: play the Hinglish note, Intake structures it, the
+4. **ISSUE-4** voice: play the Hinglish note, Intake structures it, the
    legacy module gets modernized to green. (~30s)
-4. Show `runs/<id>/ledger.json` + the PR preview: every handoff receipted.
+5. Show `runs/<id>/ledger.json` + the PR preview: every handoff receipted.
 
 ## Dependencies
 
@@ -161,5 +165,5 @@ every run clones fresh, so demos reset for free.
 | 0 | Python ≥ 3.9 + git — **nothing to pip install** | smoke, mock runs, dashboard, unit tests |
 | 1 | Python ≥ 3.9, `pip install google-genai` + `GEMINI_API_KEY` | real Gemini function-calling runs (`--backend gemini`) |
 | 1.5 | **Python ≥ 3.10** venv, `pip install google-genai` (resolves to 2.x) | real Managed Agents runs (`--backend managed`/`auto`) — on Python 3.9 the same pip command silently installs 1.47.0 instead, which lacks the surface entirely |
-| 2 | `pip install playwright` + `playwright install chromium` | real screenshots in visual mode (optional) |
+| 2 | `pip install playwright` + `playwright install chromium` | Computer Use Verifier's execution arm + static screenshots — without it, visual mode falls back to vision-on-HTML-source (optional, but recommended: this is where Computer Use lives) |
 | 3 | `gh` CLI authenticated + `GITHUB_REPO` in `.env` | real GitHub PRs (optional) |

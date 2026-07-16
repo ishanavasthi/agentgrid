@@ -14,8 +14,13 @@ mock backend that still performs real file writes, git operations, and test
 runs), and upgrades to live Gemini function-calling and Google's Managed
 Agents / Interactions API the moment an API key is configured.
 
+## Demo video
+
+[![AgentGrid demo video](https://img.youtube.com/vi/k4gK1UIKZLc/hqdefault.jpg)](https://www.youtube.com/watch?v=k4gK1UIKZLc)
+
 ## Table of contents
 
+- [Demo video](#demo-video)
 - [Why this exists](#why-this-exists)
 - [How it works](#how-it-works)
 - [The 9 functionalities](#the-9-functionalities)

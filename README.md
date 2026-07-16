@@ -1,169 +1,315 @@
-# ⚡ AgentGrid — autonomous multi-agent coding pipeline
+# AgentGrid
 
-**Google DeepMind Bangalore Hackathon — Track: Autonomous Orchestration
-with Managed Agents (iAPI / Antigravity)**
+**Google DeepMind Bangalore Hackathon, Track: Autonomous Orchestration with Managed Agents (iAPI / Antigravity)**
 
-Nine specialized agents take a software issue from report to merged,
-tested, PR-ready code — planning, delegating through a **structured
-handoff ledger**, coding **in parallel git worktrees**, arguing through
-**review rejections**, resolving **real merge conflicts**, surviving
-**adversarial test attacks**, matching **design mockups by vision**, and
-accepting issues **by voice note in Hinglish**.
+AgentGrid is a nine-role autonomous coding pipeline. Give it a software issue
+and it plans the fix, delegates work through a structured handoff ledger,
+codes in parallel git worktrees, argues through real review rejections,
+resolves real merge conflicts, survives adversarial test attacks, verifies
+UI changes by actually driving a browser, and opens a pull request, with
+every handoff visible live on a dashboard.
 
-The entire pipeline runs offline with **zero third-party dependencies**
-(deterministic mock backend; every file write, git branch, merge conflict
-and unittest run is real) and switches to **live Gemini function-calling**
-the moment a `GEMINI_API_KEY` lands in `.env` — with a real Managed
-Agents hybrid path (`client.agents`/`client.interactions`, confirmed
-live end-to-end 2026-07-11 on google-genai 2.11.0) for the tool-less
-reasoning roles, and Gemini function-calling for roles that touch the
-local repo. The Managed Agents surface needs **Python >= 3.10**
-specifically — google-genai dropped 3.9 support after 1.47.0, and pip
-silently installs that older, surface-less release on 3.9 with no error.
-Feature-detected either way: HybridBackend falls back to pure
-function-calling for every role if the surface isn't there, so the
-pipeline never breaks — it just quietly loses the Managed Agents story
-on old Python.
+It runs fully offline with zero third-party dependencies (a deterministic
+mock backend that still performs real file writes, git operations, and test
+runs), and upgrades to live Gemini function-calling and Google's Managed
+Agents / Interactions API the moment an API key is configured.
 
----
+## Table of contents
 
-## Quickstart (today — no API key, no pip installs)
+- [Why this exists](#why-this-exists)
+- [How it works](#how-it-works)
+- [The 9 functionalities](#the-9-functionalities)
+- [Architecture](#architecture)
+- [Project layout](#project-layout)
+- [Getting started](#getting-started)
+- [Running against a real GitHub issue](#running-against-a-real-github-issue)
+- [Configuration](#configuration)
+- [Dependency tiers](#dependency-tiers)
+- [Demo target: SplitSathi](#demo-target-splitsathi)
+- [Testing](#testing)
+- [Design decisions](#design-decisions)
+- [Known limitations](#known-limitations)
 
-```bash
-python3 -m agentgrid smoke          # all 4 pipelines end-to-end, offline
-python3 -m agentgrid serve          # live dashboard → http://127.0.0.1:8765
-python3 -m agentgrid run --issue ISSUE-1   # one pipeline in the terminal
-python3 -m unittest discover -s tests -t . # unit + e2e suite (13 tests)
-```
+## Why this exists
 
-## Going live (plug the key)
+Most "AI coding agent" demos are a single model in a loop with a shell.
+AgentGrid instead models a small software team: a planner that breaks work
+into subtasks, coders that work in isolated branches, a reviewer that can
+reject and force a rewrite, an integrator that resolves the merge conflicts
+that naturally show up when two coders touch the same file, a tester that is
+plain deterministic code (not another model's opinion), and a publisher that
+opens the pull request. Every handoff between roles is a structured record,
+not a chat message, so context never silently gets lost between steps.
 
-```bash
-python3.10 -m venv .venv && source .venv/bin/activate  # MUST be >= 3.10 —
-                                                          # see note below
-cp .env.example .env                # then paste GEMINI_API_KEY=...
-pip install google-genai            # Tier 1 — required for real agents
-python3 -m agentgrid doctor --probe # verifies key, SDK, model ids, surfaces, live round-trip
-python3 -m agentgrid run --issue ISSUE-1 --backend auto
-```
+## How it works
 
-**Use a Python >= 3.10 interpreter for the venv.** On Python 3.9, `pip
-install google-genai` silently resolves to 1.47.0 (the last
-3.9-compatible release) instead of the real 2.x line — it installs
-cleanly, `doctor` shows everything green except a plain "surface absent"
-on the managed-agents row, and there's no error pointing at the actual
-cause. `gemini`/`auto`/mock backends work fine on 3.9 either way; only
-the real Managed Agents path needs 3.10+.
+1. **Planner** reads the issue and produces 1-3 subtasks with acceptance
+   criteria.
+2. **Coders** implement each subtask in its own git worktree, in parallel.
+3. **Reviewer** checks each coder's diff against the acceptance criteria and
+   can reject it, sending the coder back with concrete feedback.
+4. **Integrator** merges every worktree back into one branch, resolving real
+   `git merge` conflicts when two coders touched the same file.
+5. **Tester** runs the real test suite. This is the ground truth: no model
+   sits between the suite and pass/fail.
+6. **Publisher** pushes the branch and opens a PR (a real GitHub PR via the
+   `gh` CLI if configured, otherwise a local branch push and a written PR
+   preview).
 
-`doctor` lists exactly which model ids your key can reach — pick one via
-`AGENTGRID_MODEL` in `.env` (verified working: `gemini-3.5-flash`,
-`gemini-flash-latest`). `--backend managed`/`auto` use the real
-`client.agents`/`client.interactions` surface when Python >= 3.10 +
-google-genai >= 2.0 are both present; otherwise they fall back to
-`gemini` (pure function-calling) automatically.
-
-Optional extras:
-
-```bash
-pip install playwright && playwright install chromium   # Tier 2: real screenshots for visual mode
-brew install gh && gh auth login                        # Tier 3: real GitHub PRs (set GITHUB_REPO in .env)
-```
-
-Without Tier 2/3 nothing breaks: the Verifier falls back to HTML-source
-inspection, and the Publisher pushes to a local bare origin + writes
-`runs/<id>/pr_preview.md`.
-
----
+Three other roles cover the remaining modes: **Breaker** (adversarial mode,
+writes failing tests until the Coder's fix satisfies them), **Verifier**
+(visual mode, checks a UI change against a mockup, optionally by driving a
+real browser), and **Intake** (voice mode, turns a spoken issue report,
+including Hinglish, into a structured issue).
 
 ## The 9 functionalities
 
 | # | Functionality | Where |
-|---|---------------|-------|
-| 1 | Core issue→patch loop (Planner → Coder → Tester) | `pipeline/orchestrator.py` |
-| 2 | Structured handoff ledger (tasks, packets, no lost context) | `ledger.py` |
-| 3 | Reviewer–Coder critique loop (real rejections, bounded rounds) | `_implement_subtask` |
-| 4 | Parallel coder fan-out in git worktrees + Integrator resolving real merge conflicts | `_standard_core` + `tools/gitops.py` |
-| 5 | Live dashboard (SSE, agent graph, feed, ledger board — stdlib server, no CDNs) | `server/` |
-| 6 | PR finale (gh CLI when available; local push + preview always) | `tools/github.py` |
-| 7 | Breaker/Fixer adversarial TDD (failing spec tests until concession) | `_run_adversarial` |
-| 8 | Screenshot-to-feature with an **interactive Computer Use Verifier** — drives a real browser (click/scroll/type) via Gemini 3.5 Flash's `computer_use` tool to check the fix, not just a static screenshot diff; falls back to vision-on-screenshot / HTML source if unavailable | `_run_visual`, `llm/computer_use.py`, `tools/computer_use.py` |
-| 9 | Voice-issue intake (Hinglish audio → structured issue) + legacy modernization | `_run_voice` |
+|---|----------------|-------|
+| 1 | Core issue-to-patch loop (Planner, Coder, Tester) | `agentgrid/pipeline/orchestrator.py` |
+| 2 | Structured handoff ledger (tasks, packets, no lost context) | `agentgrid/ledger.py` |
+| 3 | Reviewer-Coder critique loop (real rejections, bounded rounds) | `_implement_subtask` in `orchestrator.py` |
+| 4 | Parallel coder fan-out in git worktrees, Integrator resolving real merge conflicts | `_run_standard` + `agentgrid/tools/gitops.py` |
+| 5 | Live dashboard (server-sent events, agent graph, feed, ledger board, no external JS) | `agentgrid/server/` |
+| 6 | PR finale (real GitHub PR via `gh` CLI when available, local push and preview always) | `agentgrid/tools/github.py` |
+| 7 | Breaker/Fixer adversarial TDD (failing spec tests until concession) | `_run_adversarial` in `orchestrator.py` |
+| 8 | Screenshot-to-feature with an interactive Computer Use Verifier: drives a real browser (click, scroll, type) via Gemini's `computer_use` tool instead of judging a static screenshot; falls back to vision-on-screenshot or HTML inspection if unavailable | `_run_visual`, `agentgrid/llm/computer_use.py`, `agentgrid/tools/computer_use.py` |
+| 9 | Voice issue intake (spoken report, including Hinglish, to structured issue) and legacy code modernization | `_run_voice` in `orchestrator.py` |
+| bonus | Live GitHub issue resolution: fork a real repo, pull a real issue by URL, run the full pipeline against it, and open a real PR | `run_issue` in `orchestrator.py` |
 
 ## Architecture
 
+```mermaid
+flowchart TD
+    ISSUE["Issue<br/>(markdown file, voice note, or GitHub URL)"] --> ORCH["Orchestrator"]
+    ORCH --> PLANNER["Planner<br/>plans 1-3 subtasks"]
+    PLANNER --> LEDGER[("Task Ledger<br/>ledger.json")]
+
+    LEDGER --> CODERA["Coder A<br/>(own git worktree)"]
+    LEDGER --> CODERB["Coder B<br/>(own git worktree)"]
+    CODERA <-->|"reject / revise"| REVIEWER["Reviewer"]
+    CODERB <-->|"reject / revise"| REVIEWER
+
+    CODERA --> INTEGRATOR["Integrator<br/>resolves real git merge conflicts"]
+    CODERB --> INTEGRATOR
+    INTEGRATOR --> TESTER["Tester<br/>real unittest run, ground truth"]
+    TESTER --> PUBLISHER["Publisher"]
+    PUBLISHER --> PR["Branch push + Pull Request"]
+
+    ORCH -. events .-> BUS(("EventBus"))
+    BUS -. SSE .-> DASH["Dashboard / CLI"]
+
+    classDef store fill:#2b2b40,stroke:#8888aa,color:#fff;
+    class LEDGER,BUS store;
 ```
-            ┌────────────────────────── EventBus ── SSE ──► Dashboard / CLI
-            │
- issue ─► Orchestrator ─► Planner ──► plan (1–3 subtasks)
-            │                │ handoff packets via Task Ledger (ledger.json)
-            │        ┌───────┴────────┐        parallel git worktrees
-            │     Coder A          Coder B ◄──── Reviewer (reject → revise)
-            │        └───────┬────────┘
-            │            Integrator  ◄──── real `git merge` conflicts
-            │              Tester    ◄──── stdlib unittest = ground truth
-            │             Publisher  ──► branch push + PR
-            │
-       LLM backends (swappable, one interface — llm/base.py):
-         mock     deterministic fixtures; tools execute for real (today)
-         gemini   gemini-3.5-flash function calling (any google-genai
-                  release, Python >= 3.9 is fine)
-         managed  Managed Agents (antigravity-preview-05-2026) via the
-                  Interactions API for reasoning roles (Planner, Reviewer,
-                  Verifier, Intake, Publisher) + gemini function calling
-                  for roles that edit local files (Coder, Integrator,
-                  Breaker)  ← the hybrid is the architecture story
-                  (needs google-genai >= 2.0, which needs Python >= 3.10)
+
+**Swappable LLM backends** sit behind one interface (`agentgrid/llm/base.py`)
+and every role above is dispatched through whichever is active:
+
+| Backend | What it does |
+|---------|--------------|
+| `mock` | deterministic scripted fixtures; every tool (files, git, tests) still executes for real |
+| `gemini` | Gemini function-calling for every role |
+| `managed` | Google Managed Agents (Interactions API) for the pure-reasoning roles (Planner, Reviewer, Verifier, Intake, Publisher), plus Gemini function-calling for roles that must edit local files (Coder, Integrator, Breaker) — this hybrid split is the architecture story |
+| `auto` | picks the managed+gemini hybrid if a key is present, otherwise falls back to `mock` |
+
+Key properties:
+
+- **Handoffs carry structured context, not chat history.** Each role passes
+  the next role a task, its acceptance criteria, and any prior critique
+  through the ledger, not a raw transcript. Every handoff is recorded and
+  streamed live to the dashboard.
+- **Tests are the ground truth.** The Tester role runs real `unittest`
+  against real files; no model interprets or overrides a test result.
+- **File access is sandboxed.** Every agent's file tools are jailed to its
+  own git worktree (`agentgrid/tools/fs.py` rejects path escapes), and tool
+  failures return an error to the model instead of crashing the run.
+- **The mock backend only mocks the intelligence.** File writes, git
+  worktrees, merges, conflicts, and test runs are all real even with no API
+  key configured, so the offline smoke suite exercises the true pipeline,
+  not a simulation of it.
+
+## Project layout
+
+```
+agentgrid/
+  agents/
+    base.py            agent tool-calling loop (Agent.run)
+    roster.py           the 9 role definitions and system prompts
+  llm/
+    base.py              shared LLMBackend / ToolCall interface
+    mock.py               deterministic offline backend
+    gemini.py             Gemini function-calling backend
+    managed.py             Google Managed Agents (Interactions API) backend
+    computer_use.py         interactive Computer Use verify loop
+  pipeline/
+    orchestrator.py     drives all 5 run modes (standard, adversarial,
+                         visual, voice, live-GitHub-issue)
+  tools/
+    fs.py                sandboxed read/write/list file tools
+    gitops.py             worktrees, merges, conflict handling
+    github.py              gh CLI integration, PR publishing
+    computer_use.py         Playwright execution arm for Computer Use
+    testrunner.py           real unittest execution
+    screenshot.py           static screenshot capture fallback
+  server/
+    app.py               stdlib HTTP + SSE dashboard server
+    static/index.html      dashboard UI (no CDN dependencies)
+  ledger.py              structured task/handoff ledger
+  bus.py                  in-process event bus (feeds dashboard + CLI)
+  assets.py                generates demo mockup PNG / voice-note WAV
+  cli.py                   `agentgrid` command-line entry point
+  smoke.py                offline end-to-end smoke test of all 4 pipelines
+demo/
+  target_template/       the SplitSathi demo repo (source + planted issues)
+  fixtures/                scripted responses for the mock backend
+tests/                    unit and end-to-end test suite
 ```
 
-Design decisions that matter in judging Q&A:
+## Getting started
 
-- **Handoffs don't lose context** because agents exchange structured
-  packets (task, acceptance criteria, prior critiques) via the ledger —
-  not chat transcripts. Every handoff is recorded and visible live.
-- **Tests are ground truth, not opinions**: the Tester is deterministic
-  code; no model sits between the suite and control flow.
-- **Safety/predictability**: every agent's file access is jailed to its
-  worktree (`tools/fs.py` rejects path escapes), tool crashes return
-  errors instead of killing the run, and review/attack loops are bounded.
-- **The mock backend mocks only the intelligence** — file writes, git
-  worktrees, merges, conflicts and test runs are real, so offline smoke
-  tests exercise the true pipeline.
+Requires Python 3.9+ and git. No API key or pip installs are needed for the
+first three commands:
 
-## Demo repo: SplitSathi 🇮🇳
+```bash
+python3 -m agentgrid smoke          # all 4 pipelines end-to-end, offline
+python3 -m agentgrid serve          # live dashboard at http://127.0.0.1:8765
+python3 -m agentgrid run --issue ISSUE-1   # run one issue in the terminal
+python3 -m unittest discover -s tests -t . # unit + e2e suite
+```
 
-The target is `demo/target_template` — a UPI-flavored expense-splitting
-library with a passing suite and four planted issues:
-paisa truncation + settlement-summary feature (engineered to collide in
-`money.py` → live merge conflict), a paise-conservation leak for the
-Breaker, a stats-page mockup for the Verifier, and a 2019-vintage legacy
-module filed **by Hinglish voice note** — the legacy-modernization story
-Indian IT services run at scale.
+### Going live
 
-`python3 -m agentgrid setup-demo` seeds a bare origin under `runs/`;
-every run clones fresh, so demos reset for free.
+Real Gemini function-calling only needs Python 3.9+:
 
-## 3-minute demo script
+```bash
+python3 -m venv .venv && source .venv/bin/activate
+cp .env.example .env                # then paste in GEMINI_API_KEY=...
+pip install google-genai
+python3 -m agentgrid doctor --probe # verifies key, SDK, model ids, live round-trip
+python3 -m agentgrid run --issue ISSUE-1 --backend gemini
+```
 
-1. Dashboard up (`serve`), pick **ISSUE-1** → watch Planner fan out two
-   Coders in parallel; Reviewer **rejects** the float fix; Coder rebuilds
-   on Decimal; **merge conflict flashes**; Integrator resolves; tests go
-   green; PR appears. (~90s)
-2. **ISSUE-3** visual: the Verifier drives a real browser via Gemini's
-   **Computer Use** tool — clicking/scrolling the live page itself
-   (`AGENTGRID_CU_HEADED=1` to watch the window) instead of judging a
-   static screenshot. (~20s)
-3. **ISSUE-2** adversarial: Breaker plants red tests, Coder answers,
-   Breaker concedes. (~45s)
-4. **ISSUE-4** voice: play the Hinglish note, Intake structures it, the
-   legacy module gets modernized to green. (~30s)
-5. Show `runs/<id>/ledger.json` + the PR preview: every handoff receipted.
+The real Managed Agents surface (`client.agents` / `client.interactions`)
+additionally needs **Python 3.10+**. `google-genai` dropped Python 3.9
+support after version 1.47.0, and on 3.9 `pip install google-genai` silently
+resolves to that older, surface-less release with no error:
 
-## Dependencies
+```bash
+python3.10 -m venv .venv && source .venv/bin/activate
+pip install google-genai
+python3 -m agentgrid run --issue ISSUE-1 --backend auto
+```
 
-| Tier | What | Needed for |
-|------|------|------------|
-| 0 | Python ≥ 3.9 + git — **nothing to pip install** | smoke, mock runs, dashboard, unit tests |
-| 1 | Python ≥ 3.9, `pip install google-genai` + `GEMINI_API_KEY` | real Gemini function-calling runs (`--backend gemini`) |
-| 1.5 | **Python ≥ 3.10** venv, `pip install google-genai` (resolves to 2.x) | real Managed Agents runs (`--backend managed`/`auto`) — on Python 3.9 the same pip command silently installs 1.47.0 instead, which lacks the surface entirely |
-| 2 | `pip install playwright` + `playwright install chromium` | Computer Use Verifier's execution arm + static screenshots — without it, visual mode falls back to vision-on-HTML-source (optional, but recommended: this is where Computer Use lives) |
-| 3 | `gh` CLI authenticated + `GITHUB_REPO` in `.env` | real GitHub PRs (optional) |
+`agentgrid doctor` lists exactly which model IDs your key can reach and
+flags which surfaces are available. `--backend managed` / `auto` use the
+real Managed Agents path when Python 3.10+ and `google-genai` 2.x are both
+present; otherwise they fall back automatically to `gemini`
+(pure function-calling), so the pipeline never breaks, it just loses the
+Managed Agents story on older Python.
+
+Optional extras:
+
+```bash
+pip install playwright && playwright install chromium   # real browser-driven Verifier
+brew install gh && gh auth login                        # real GitHub PRs
+```
+
+Without these, nothing breaks: the Verifier falls back to HTML-source
+inspection, and the Publisher pushes to a local bare origin and writes
+`runs/<run-id>/pr_preview.md` instead of opening a real PR.
+
+## Running against a real GitHub issue
+
+Pass a GitHub issue URL instead of a demo issue ID:
+
+```bash
+python3 -m agentgrid run --issue https://github.com/<owner>/<repo>/issues/<number> --backend auto
+```
+
+AgentGrid forks the repository into your authenticated `gh` account, does a
+shallow clone of the fork, pulls the real issue title and body, runs the
+full pipeline against it, and opens a real pull request back to the
+original repository when done. This needs the `gh` CLI authenticated
+(`gh auth login`) and does not require the target repo to be one you own.
+
+## Configuration
+
+All configuration lives in `.env` (copy from `.env.example`):
+
+| Variable | Purpose |
+|----------|---------|
+| `GEMINI_API_KEY` | enables all live backends; empty means mock-only |
+| `AGENTGRID_MODEL` | Gemini model ID, e.g. `gemini-3.5-flash` |
+| `AGENTGRID_BASE_AGENT` | base Managed Agent id |
+| `AGENTGRID_BACKEND` | `auto` \| `mock` \| `gemini` \| `managed` |
+| `GITHUB_REPO` | `owner/repo` for the demo-issue PR flow; not needed for the live-issue-URL flow above |
+| `AGENTGRID_CU_DISABLE` | set to `1` to skip the Computer Use Verifier and always use the faster static-screenshot path |
+| `AGENTGRID_CU_HEADED` | set to `1` to watch Computer Use drive a real, visible Chromium window instead of running headless |
+| `AGENTGRID_MOCK_DELAY` | artificial per-turn delay for the mock backend, for demo pacing |
+| `AGENTGRID_PORT` | dashboard port (default 8765) |
+
+## Dependency tiers
+
+| Tier | Requires | Enables |
+|------|----------|---------|
+| 0 | Python 3.9+, git | smoke test, mock runs, dashboard, unit tests, nothing to `pip install` |
+| 1 | Python 3.9+, `pip install google-genai`, `GEMINI_API_KEY` | real Gemini function-calling (`--backend gemini`) |
+| 1.5 | Python 3.10+ venv, `pip install google-genai` | real Managed Agents (`--backend managed` / `auto`); on 3.9 the same install silently resolves to a version without this surface |
+| 2 | `pip install playwright && playwright install chromium` | the Computer Use Verifier's execution arm and static screenshots; without it, visual mode falls back to vision-on-HTML-source |
+| 3 | `gh` CLI authenticated | real GitHub PRs, forking, and the live-issue-URL flow |
+
+## Demo target: SplitSathi
+
+`demo/target_template` is a small UPI-flavored expense-splitting library
+used as the pipeline's target repository, with four planted issues that
+exercise every mode:
+
+- an engineered collision between a paisa-rounding fix and a
+  settlement-summary feature in the same file, producing a real merge
+  conflict for the Integrator
+- a paise-conservation leak for the Breaker to attack and the Coder to fix
+- a stats-page UI mockup for the Verifier to check against the live page
+- a legacy, undocumented module reported by voice note (Hinglish supported)
+  for the Intake role to structure and the Coder to modernize
+
+`python3 -m agentgrid setup-demo` seeds a local bare git origin under
+`runs/`. Every run clones fresh from it, so the demo resets for free.
+
+## Testing
+
+```bash
+python3 -m unittest discover -s tests -t .
+```
+
+13 tests covering the ledger, tool sandboxing, git operations, and full
+end-to-end runs of all 4 pipeline modes against the mock backend.
+
+## Design decisions
+
+- **Structured handoffs over chat transcripts.** Passing typed packets
+  (task, acceptance criteria, prior critique) through the ledger, instead of
+  letting agents share raw conversation history, keeps context from being
+  lost or diluted across a long run and makes every handoff independently
+  inspectable.
+- **Deterministic ground truth for pass/fail.** The Tester is plain code
+  running the real test suite, never a model judging its own or another
+  model's work.
+- **Fail open, not closed.** Every optional capability (Managed Agents,
+  Computer Use, real GitHub PRs, real screenshots) is feature-detected at
+  runtime and falls back to a working alternative rather than crashing the
+  run.
+- **Sandboxed by construction.** Coders and the Integrator each work inside
+  their own git worktree with path-escape checks on every file tool, so a
+  bad model response can't write outside the run's own directory.
+
+## Known limitations
+
+- The demo voice note (`ISSUE-4.wav`) is a synthesized placeholder tone, not
+  a real recording; the Intake role's transcription only reflects genuine
+  audio content when a real recording is substituted for it.
+- The live-GitHub-issue flow force-pushes to your fork; it does not touch
+  the original repository's branches directly, but review the diff before
+  merging any PR it opens.
+- Visual-mode verification without Playwright installed falls back to
+  reading rendered HTML source rather than an actual screenshot comparison.

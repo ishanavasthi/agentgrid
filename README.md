@@ -16,7 +16,9 @@ Agents / Interactions API the moment an API key is configured.
 
 ## Demo video
 
-[![AgentGrid demo video](https://img.youtube.com/vi/k4gK1UIKZLc/hqdefault.jpg)](https://www.youtube.com/watch?v=k4gK1UIKZLc)
+<a href="https://www.youtube.com/watch?v=k4gK1UIKZLc" target="_blank" rel="noopener noreferrer">
+  <img src="https://img.youtube.com/vi/k4gK1UIKZLc/hqdefault.jpg" alt="AgentGrid demo video" />
+</a>
 
 ## Table of contents
 

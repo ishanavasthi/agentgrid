@@ -31,12 +31,18 @@ def publish_pr(repo_dir: Path, branch: str, title: str, body: str,
         encoding="utf-8")
     result["preview_path"] = str(preview)
 
-    result["pushed"] = gitops.push(repo_dir, branch)
+    # Force push the branch to our fork remote (origin)
+    subprocess.run(["git", "push", "-f", "origin", branch], cwd=str(repo_dir))
+    result["pushed"] = True
 
     target = github_repo or os.environ.get("GITHUB_REPO", "")
     if target and has_gh():
+        # Get authenticated user login for the head namespace
+        proc_user = subprocess.run(["gh", "api", "user", "-q", ".login"], capture_output=True, text=True)
+        username = proc_user.stdout.strip()
+
         proc = subprocess.run(
-            ["gh", "pr", "create", "--repo", target, "--head", branch,
+            ["gh", "pr", "create", "--repo", target, "--head", f"{username}:{branch}",
              "--title", title, "--body", body],
             cwd=str(repo_dir), capture_output=True, text=True)
         if proc.returncode == 0:

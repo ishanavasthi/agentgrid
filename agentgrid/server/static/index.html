@@ -77,7 +77,8 @@
   <span class="pill" id="backend">backend: —</span>
   <span class="pill" id="runid"></span>
   <div class="spacer"></div>
-  <select id="issue"></select>
+  <input type="text" id="issue-url" placeholder="Paste live GitHub Issue URL..." style="width: 320px; padding: 6px 10px; background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 6px; font-family: inherit; font-size: 13px;" />
+  <select id="issue" style="width: 140px;"></select>
   <select id="mode">
     <option value="auto">mode: auto</option>
     <option value="standard">standard</option>
@@ -305,7 +306,7 @@ $("runbtn").addEventListener("click", () => {
   fetch("/api/run", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ issue: $("issue").value, mode: $("mode").value }),
+    body: JSON.stringify({ issue: $("issue-url").value.trim() || $("issue").value, mode: $("mode").value }),
   }).then(r => r.json()).then(res => {
     if (res.error) { feed("bad", "", res.error); $("runbtn").disabled = false; }
   }).catch(() => { $("runbtn").disabled = false; });

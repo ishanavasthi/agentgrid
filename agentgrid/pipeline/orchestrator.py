@@ -96,37 +96,77 @@ class Orchestrator:
 
     def run_issue(self, issue_id: str, mode: str = "auto",
                   reset_bus: bool = True) -> dict:
-        if not ORIGIN_BARE.exists():
-            self.setup_demo()
+        import re
+        import json
+        import subprocess
+
+        is_live_github = False
+        github_url_match = re.search(r"https://github\.com/([^/]+)/([^/]+)/issues/(\d+)", issue_id)
+        
+        if github_url_match:
+            is_live_github = True
+            owner = github_url_match.group(1)
+            repo_name = github_url_match.group(2)
+            issue_number = github_url_match.group(3)
+            self.settings.github_repo = f"{owner}/{repo_name}"
+            short_id = f"issue-{issue_number}"
+        else:
+            short_id = issue_id
+
         self.backend, note = get_backend(self.backend_name, self.settings)
 
-        run_id = time.strftime("%Y%m%d-%H%M%S") + "-" + issue_id.lower()
+        run_id = time.strftime("%Y%m%d-%H%M%S") + "-" + short_id.lower()
         run_dir = RUNS_DIR / run_id
         run_dir.mkdir(parents=True)
         repo = run_dir / "repo"
-        g.clone(ORIGIN_BARE, repo)
 
-        issue_path = repo / "issues" / f"{issue_id}.md"
-        if not issue_path.exists():
-            raise PipelineError(f"no such issue: {issue_id} "
-                                f"(expected {issue_path})")
-        issue_text = issue_path.read_text(encoding="utf-8")
-        front = parse_frontmatter(issue_text)
-        resolved_mode = mode if mode not in ("", "auto") else front.get("mode", "standard")
+        if is_live_github:
+            # Fork and clone the repository
+            # Get authenticated user login
+            proc = subprocess.run(["gh", "api", "user", "-q", ".login"], capture_output=True, text=True)
+            username = proc.stdout.strip()
+            
+            # Fork (skip clone)
+            self.bus.publish("agent_message", agent="Orchestrator", content=f"Forking live repository {owner}/{repo_name}...")
+            subprocess.run(["gh", "repo", "fork", f"{owner}/{repo_name}", "--clone=false"])
+            
+            # Shallow clone our fork to save disk space
+            self.bus.publish("agent_message", agent="Orchestrator", content=f"Shallow cloning fork into temporary workspace...")
+            subprocess.run(["git", "clone", "--depth", "1", f"https://github.com/{username}/{repo_name}.git", str(repo)])
+            
+            # Fetch issue details
+            self.bus.publish("agent_message", agent="Orchestrator", content=f"Fetching live issue #{issue_number} details from GitHub...")
+            proc = subprocess.run(["gh", "issue", "view", issue_number, "--repo", f"{owner}/{repo_name}", "--json", "title,body"], capture_output=True, text=True)
+            issue_data = json.loads(proc.stdout)
+            issue_text = f"# {issue_data.get('title')}\n\n{issue_data.get('body')}"
+            front = {}
+            resolved_mode = "standard"
+        else:
+            if not ORIGIN_BARE.exists():
+                self.setup_demo()
+            g.clone(ORIGIN_BARE, repo)
+
+            issue_path = repo / "issues" / f"{issue_id}.md"
+            if not issue_path.exists():
+                raise PipelineError(f"no such issue: {issue_id} "
+                                    f"(expected {issue_path})")
+            issue_text = issue_path.read_text(encoding="utf-8")
+            front = parse_frontmatter(issue_text)
+            resolved_mode = mode if mode not in ("", "auto") else front.get("mode", "standard")
 
         self.ledger = Ledger(run_dir, self.bus)
-        self.ledger.meta = {"run_id": run_id, "issue": issue_id,
+        self.ledger.meta = {"run_id": run_id, "issue": short_id,
                             "mode": resolved_mode, "backend": self.backend.name}
         if reset_bus:
             self.bus.reset()
-        self.bus.publish("run_started", run_id=run_id, issue=issue_id,
+        self.bus.publish("run_started", run_id=run_id, issue=short_id,
                          mode=resolved_mode, backend=self.backend.name,
                          backend_note=note)
 
-        ctx = SimpleNamespace(issue_id=issue_id, issue_text=issue_text,
-                              front=front, run_dir=run_dir, repo=repo,
-                              mode=resolved_mode)
-        ctx.root = self.ledger.new_task(f"{issue_id}: resolve end-to-end",
+        ctx = SimpleNamespace(issue_id=short_id, issue_text=issue_text,
+                               front=front, run_dir=run_dir, repo=repo,
+                               mode=resolved_mode)
+        ctx.root = self.ledger.new_task(f"{short_id}: resolve end-to-end",
                                         "issue", owner="Orchestrator",
                                         detail=truncate(issue_text, 1200))
         try:
@@ -144,7 +184,13 @@ class Orchestrator:
                              error=str(exc))
             self.ledger.save()
             raise
-        summary.update({"run_id": run_id, "issue": issue_id,
+        finally:
+            if is_live_github and repo.exists():
+                import shutil
+                self.bus.publish("agent_message", agent="Orchestrator", content="Disk cleanup: securely purging temporary repository source code...")
+                shutil.rmtree(repo, ignore_errors=True)
+
+        summary.update({"run_id": run_id, "issue": short_id,
                         "mode": resolved_mode, "run_dir": str(run_dir),
                         "backend": self.backend.name})
         self.ledger.update(ctx.root.id, status="done")
@@ -467,7 +513,20 @@ class Orchestrator:
 
     def _run_visual(self, ctx) -> dict:
         issue_id, repo, run_dir = ctx.issue_id, ctx.repo, ctx.run_dir
-        page = ctx.front.get("page", "web/index.html")
+        
+        # Adaptive page resolution for arbitrary cloned repos in visual mode
+        page = ctx.front.get("page", "")
+        if not page:
+            if (repo / "web/index.html").exists():
+                page = "web/index.html"
+            else:
+                # Search recursively for any index.html file (e.g. in public/ or root)
+                candidates = list(repo.rglob("index.html"))
+                if candidates:
+                    page = str(candidates[0].relative_to(repo))
+                else:
+                    page = "index.html" # Fallback
+                    
         mockup = repo / ctx.front.get("mockup", f"issues/{issue_id}.mockup.png")
         branch = f"ui/{issue_id.lower()}"
         g.checkout_new(repo, branch, "main")
@@ -626,6 +685,10 @@ class Orchestrator:
                 "repairs": repairs}
 
     def _publish(self, ctx, repo: Path, branch: str, facts: str) -> dict:
+        import re
+        import json
+        import subprocess
+
         pub_task = self.ledger.new_task("Publish pull request", "publish",
                                         owner="Publisher", parent=ctx.root.id)
         self.ledger.handoff("Orchestrator", "Publisher", pub_task.id,
@@ -642,9 +705,69 @@ class Orchestrator:
         if lines and lines[0].startswith("# "):
             title = lines[0][2:].strip()
             body = "\n".join(lines[1:]).strip()
+
+        # Format the PR title to follow: Fix #{issue_number}: {issue_title}
+        if ctx.issue_id.startswith("issue-"):
+            issue_number = ctx.issue_id.split("-")[-1]
+            issue_title = ""
+            if ctx.issue_text:
+                first_line = ctx.issue_text.splitlines()[0]
+                if first_line.startswith("# "):
+                    issue_title = first_line.lstrip("# ").strip()
+            if issue_number and issue_title:
+                title = f"Fix #{issue_number}: {issue_title}"
         pr = publish_pr(repo, branch, title, body, ctx.run_dir,
                         self.settings.github_repo)
         pr["title"] = title
         self.bus.publish("pr_created", **{k: v for k, v in pr.items()})
         self.ledger.update(pub_task.id, status="done", pr=pr)
+
+        # Check for automated check reviews/comments on the PR once
+        pr_match = re.search(r"/pull/(\d+)", pr.get("url", ""))
+        if pr_match and self.settings.github_repo:
+            pr_number = pr_match.group(1)
+            # Sleep 25 seconds for checks/bots to trigger and write initial comments
+            self.bus.publish("agent_message", agent="Publisher", content="Waiting 25 seconds for automated bot reviews/comments on the pull request...")
+            time.sleep(25)
+            # Fetch comments
+            proc = subprocess.run(
+                ["gh", "pr", "view", pr_number, "--repo", self.settings.github_repo, "--json", "comments"],
+                capture_output=True, text=True)
+            if proc.returncode == 0:
+                try:
+                    comments_data = json.loads(proc.stdout)
+                    comments = comments_data.get("comments", [])
+                    # Get authenticated user login
+                    proc_user = subprocess.run(["gh", "api", "user", "-q", ".login"], capture_output=True, text=True)
+                    username = proc_user.stdout.strip()
+                    
+                    # Filter out comments written by ourselves (e.g. ishanavasthi)
+                    bot_comments = [c for c in comments if c.get("author", {}).get("login") != username]
+                    if bot_comments:
+                        self.bus.publish("agent_message", agent="Publisher", content=f"Detected {len(bot_comments)} external/bot comment(s) on the PR! Triggering re-execution/repair pipeline...")
+                        
+                        # Construct feedback text
+                        feedback = "\n\n".join(
+                            f"Comment from {c.get('author', {}).get('login')}:\n{c.get('body')}"
+                            for c in bot_comments)
+                        
+                        # Re-trigger a Repair round by Coder
+                        fix_task = self.ledger.new_task("Address bot/PR feedback comments", "code",
+                                                        owner="Coder", parent=pub_task.id)
+                        self.ledger.handoff("Publisher", "Coder", fix_task.id,
+                                            self.ledger.packet_for(fix_task.id))
+                        self.ledger.update(fix_task.id, status="in_progress")
+                        coder = self._agent("coder", root=repo)
+                        coder.run(
+                            f"{self._meta(issue=ctx.issue_id, sub='PR-FEEDBACK', round=1, mode=ctx.mode)}\n\n"
+                            f"The pull request received the following feedback/bot comments. Address all comments and update the code accordingly:\n\n"
+                            f"{feedback}",
+                            task_id=fix_task.id)
+                        g.commit_all(repo, "chore: address PR review feedback")
+                        # Force push updated branch to fork
+                        subprocess.run(["git", "push", "-f", "origin", branch], cwd=str(repo))
+                        self.ledger.update(fix_task.id, status="done")
+                        self.bus.publish("agent_message", agent="Publisher", content="Pushed updated branch to pull request, feedback resolved!")
+                except Exception as exc:
+                    self.bus.publish("agent_message", agent="Publisher", content=f"Could not parse comments: {exc}")
         return pr

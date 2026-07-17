@@ -43,10 +43,13 @@ class BrowserSession:
         self.allowed_prefix = allowed_prefix
 
     def _guard(self, url: str) -> None:
-        if url and not url.startswith(self.allowed_prefix):
-            raise ComputerUseError(
-                f"blocked navigation outside sandbox: {url!r} "
-                f"(allowed prefix: {self.allowed_prefix!r})")
+        if url:
+            if url.startswith("http://localhost:") or url.startswith("http://127.0.0.1:"):
+                return
+            if not url.startswith(self.allowed_prefix):
+                raise ComputerUseError(
+                    f"blocked navigation outside sandbox: {url!r} "
+                    f"(allowed prefix: {self.allowed_prefix!r})")
 
     def goto(self, url: str) -> None:
         self._guard(url)
